@@ -9,9 +9,12 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.KeyStoreException
 import java.security.ProviderException
 import java.security.UnrecoverableKeyException
+import java.util.Collections
 import java.util.Base64
+import java.util.IdentityHashMap
 import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -37,17 +40,31 @@ class IdentityStoreUnavailable(
 ) : IllegalStateException(message, cause)
 
 internal enum class IdentityReadFailure {
-    CORRUPTED,
+    CIPHERTEXT_CORRUPTED,
+    KEY_PERMANENTLY_INVALIDATED,
     UNAVAILABLE,
 }
 
-internal fun classifyIdentityReadSecurityFailure(error: Throwable): IdentityReadFailure = when (error) {
-    is BadPaddingException,
-    is KeyPermanentlyInvalidatedException,
-    is UnrecoverableKeyException,
-    -> IdentityReadFailure.CORRUPTED
+internal fun classifyIdentityReadSecurityFailure(error: Throwable): IdentityReadFailure {
+    if (error.hasCauseOfType<KeyPermanentlyInvalidatedException>()) {
+        return IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED
+    }
+    if (error.hasCauseOfType<BadPaddingException>()) {
+        return IdentityReadFailure.CIPHERTEXT_CORRUPTED
+    }
+    return IdentityReadFailure.UNAVAILABLE
+}
 
-    else -> IdentityReadFailure.UNAVAILABLE
+internal fun shouldRetryInvalidatedKey(retryCount: Int): Boolean = retryCount == 0
+
+private inline fun <reified T : Throwable> Throwable.hasCauseOfType(): Boolean {
+    val visited = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
+    var current: Throwable? = this
+    while (current != null && visited.add(current)) {
+        if (current is T) return true
+        current = current.cause
+    }
+    return false
 }
 
 internal object GcmIvValidator {
@@ -105,18 +122,13 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
                 doFinal(ciphertext)
             }
         } catch (error: GeneralSecurityException) {
-            when (classifyIdentityReadSecurityFailure(error)) {
-                IdentityReadFailure.CORRUPTED ->
-                    clearCorruptedAndThrow("Stored device identity cannot be decrypted", error)
-                IdentityReadFailure.UNAVAILABLE ->
-                    throw IdentityStoreUnavailable("Encrypted device identity is temporarily unavailable", error)
-            }
+            handleReadCryptoFailure(error)
         } catch (error: IOException) {
-            throw IdentityStoreUnavailable("Encrypted device identity key cannot be loaded", error)
+            handleReadCryptoFailure(error)
         } catch (error: ProviderException) {
-            throw IdentityStoreUnavailable("Encrypted device identity provider is unavailable", error)
+            handleReadCryptoFailure(error)
         } catch (error: IllegalArgumentException) {
-            throw IdentityStoreUnavailable("Encrypted device identity parameters are unsupported", error)
+            handleReadCryptoFailure(error)
         }
 
         return try {
@@ -132,21 +144,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
 
     private fun saveLocked(identity: DeviceIdentity) {
         val plaintext = IdentityCodec.encode(identity).toByteArray(StandardCharsets.UTF_8)
-        val encrypted = try {
-            Cipher.getInstance(CIPHER_TRANSFORMATION).run {
-                init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-                val providerIv = GcmIvValidator.requireValid(iv)
-                EncryptedPayload(providerIv, doFinal(plaintext))
-            }
-        } catch (error: GeneralSecurityException) {
-            throw IdentityStoreUnavailable("Unable to encrypt device identity", error)
-        } catch (error: IOException) {
-            throw IdentityStoreUnavailable("Unable to load the device identity key", error)
-        } catch (error: ProviderException) {
-            throw IdentityStoreUnavailable("Device identity encryption provider is unavailable", error)
-        } catch (error: IllegalArgumentException) {
-            throw IdentityStoreUnavailable("Device identity encryption parameters are unsupported", error)
-        }
+        val encrypted = encryptWithKeyRecovery(plaintext)
 
         val committed = preferences.edit()
             .clear()
@@ -168,7 +166,11 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     private fun existingKey(): SecretKey? {
         val store = keyStore()
         if (!store.containsAlias(KEY_ALIAS)) return null
-        return store.getKey(KEY_ALIAS, null) as? SecretKey
+        val key = store.getKey(KEY_ALIAS, null)
+        if (key !is SecretKey || !key.algorithm.equals(KeyProperties.KEY_ALGORITHM_AES, ignoreCase = true)) {
+            throw KeyStoreException("Device identity alias is not an AES secret key")
+        }
+        return key
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
@@ -192,6 +194,87 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     @Throws(GeneralSecurityException::class, IOException::class)
     private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply {
         load(null)
+    }
+
+    private fun encryptWithKeyRecovery(plaintext: ByteArray): EncryptedPayload {
+        var retryCount = 0
+        while (true) {
+            try {
+                return Cipher.getInstance(CIPHER_TRANSFORMATION).run {
+                    init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+                    val providerIv = GcmIvValidator.requireValid(iv)
+                    EncryptedPayload(providerIv, doFinal(plaintext))
+                }
+            } catch (error: GeneralSecurityException) {
+                recoverInvalidatedKeyOrThrow(error, retryCount)
+            } catch (error: IOException) {
+                recoverInvalidatedKeyOrThrow(error, retryCount)
+            } catch (error: ProviderException) {
+                recoverInvalidatedKeyOrThrow(error, retryCount)
+            } catch (error: IllegalArgumentException) {
+                recoverInvalidatedKeyOrThrow(error, retryCount)
+            }
+            retryCount += 1
+        }
+    }
+
+    private fun recoverInvalidatedKeyOrThrow(error: Throwable, retryCount: Int) {
+        if (
+            classifyIdentityReadSecurityFailure(error) != IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED ||
+            !shouldRetryInvalidatedKey(retryCount)
+        ) {
+            throw IdentityStoreUnavailable("Unable to encrypt device identity", error)
+        }
+
+        try {
+            deleteStorageKey()
+        } catch (deleteError: GeneralSecurityException) {
+            throw keyRecoveryUnavailable(error, deleteError)
+        } catch (deleteError: IOException) {
+            throw keyRecoveryUnavailable(error, deleteError)
+        } catch (deleteError: ProviderException) {
+            throw keyRecoveryUnavailable(error, deleteError)
+        }
+    }
+
+    private fun keyRecoveryUnavailable(invalidation: Throwable, deleteError: Throwable): IdentityStoreUnavailable =
+        IdentityStoreUnavailable("Unable to replace invalidated device identity key", deleteError).also {
+            it.addSuppressed(invalidation)
+        }
+
+    private fun handleReadCryptoFailure(error: Throwable): Nothing =
+        when (classifyIdentityReadSecurityFailure(error)) {
+            IdentityReadFailure.CIPHERTEXT_CORRUPTED ->
+                clearCorruptedAndThrow("Stored device identity authentication failed", error)
+            IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED ->
+                clearInvalidatedKeyAndThrow(error)
+            IdentityReadFailure.UNAVAILABLE ->
+                throw IdentityStoreUnavailable("Encrypted device identity is temporarily unavailable", error)
+        }
+
+    private fun clearInvalidatedKeyAndThrow(cause: Throwable): Nothing {
+        val error = IdentityStoreCorrupted("Stored device identity key was permanently invalidated", cause)
+        try {
+            deleteStorageKey()
+        } catch (cleanupError: GeneralSecurityException) {
+            error.addSuppressed(cleanupError)
+        } catch (cleanupError: IOException) {
+            error.addSuppressed(cleanupError)
+        } catch (cleanupError: ProviderException) {
+            error.addSuppressed(cleanupError)
+        }
+        if (!preferences.edit().clear().commit()) {
+            error.addSuppressed(IllegalStateException("Unable to clear invalidated device identity"))
+        }
+        throw error
+    }
+
+    @Throws(GeneralSecurityException::class, IOException::class)
+    private fun deleteStorageKey() {
+        val store = keyStore()
+        if (store.containsAlias(KEY_ALIAS)) {
+            store.deleteEntry(KEY_ALIAS)
+        }
     }
 
     private fun clearCorruptedAndThrow(message: String, cause: Throwable? = null): Nothing {

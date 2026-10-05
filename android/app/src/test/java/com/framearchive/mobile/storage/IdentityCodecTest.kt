@@ -203,22 +203,34 @@ class IdentityCodecTest {
     }
 
     @Test
-    fun `read security failure classification clears only known corruption`() {
+    fun `read security failure classification distinguishes ciphertext corruption`() {
         listOf(
             AEADBadTagException(),
             BadPaddingException(),
-            UnrecoverableKeyException(),
+            NoSuchAlgorithmException("wrapper", BadPaddingException()),
         ).forEach { error ->
-            assertEquals(IdentityReadFailure.CORRUPTED, classifyIdentityReadSecurityFailure(error))
+            assertEquals(IdentityReadFailure.CIPHERTEXT_CORRUPTED, classifyIdentityReadSecurityFailure(error))
         }
+    }
 
+    @Test
+    fun `read security failure classification preserves state for unavailable failures`() {
         listOf(
+            UnrecoverableKeyException(),
+            NoSuchAlgorithmException("wrapper", UnrecoverableKeyException()),
             NoSuchAlgorithmException(),
             InvalidAlgorithmParameterException(),
             ProviderException(),
         ).forEach { error ->
             assertEquals(IdentityReadFailure.UNAVAILABLE, classifyIdentityReadSecurityFailure(error))
         }
+    }
+
+    @Test
+    fun `invalidated key recovery retries only once`() {
+        assertTrue(shouldRetryInvalidatedKey(retryCount = 0))
+        assertFalse(shouldRetryInvalidatedKey(retryCount = 1))
+        assertFalse(shouldRetryInvalidatedKey(retryCount = 2))
     }
 
     private fun assertRejected(json: String) {
