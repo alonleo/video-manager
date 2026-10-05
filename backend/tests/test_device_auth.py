@@ -13,6 +13,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
+from app.api import device_auth as device_auth_api
 from app.db import get_session
 from app.main import app
 from app.models import Base
@@ -92,6 +93,26 @@ async def request_pairing_token(local: httpx.AsyncClient) -> str:
     response = await local.post("/api/trusted-devices/pairings")
     assert response.status_code == 201
     return response.json()["token"]
+
+
+@pytest.mark.asyncio
+async def test_pairing_origins_recommend_reachable_lan_address(auth_env, monkeypatch):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+    monkeypatch.setattr(
+        device_auth_api,
+        "discover_pairing_origins",
+        lambda port: [f"http://192.168.1.70:{port}"],
+        raising=False,
+    )
+
+    response = await local.get("/api/device-auth/pairing-origins")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": ["http://192.168.1.70:8420"],
+        "recommended": "http://192.168.1.70:8420",
+    }
 
 
 async def pair_from_address(

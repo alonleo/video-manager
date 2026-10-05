@@ -6,6 +6,7 @@ import base64
 import hashlib
 import ipaddress
 import secrets
+import socket
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -34,6 +35,46 @@ PRIVATE_CLIENT_NETWORKS = tuple(
         "::1/128",
     )
 )
+PAIRING_SERVER_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+    )
+)
+
+
+def discover_pairing_origins(port: int) -> list[str]:
+    """Return reachable IPv4 LAN origins suitable for another device."""
+    addresses: set[ipaddress.IPv4Address] = set()
+
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_DGRAM)
+    except OSError:
+        infos = []
+    for info in infos:
+        try:
+            addresses.add(ipaddress.IPv4Address(info[4][0]))
+        except (ipaddress.AddressValueError, IndexError):
+            continue
+
+    # UDP connect selects the active route without sending traffic.
+    for probe in ("192.0.2.1", "198.51.100.1"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+                route.connect((probe, 9))
+                addresses.add(ipaddress.IPv4Address(route.getsockname()[0]))
+        except (OSError, ipaddress.AddressValueError):
+            continue
+
+    usable = sorted(
+        address
+        for address in addresses
+        if any(address in network for network in PAIRING_SERVER_NETWORKS)
+    )
+    suffix = "" if port == 80 else f":{port}"
+    return [f"http://{address}{suffix}" for address in usable]
 
 
 def utcnow() -> datetime:

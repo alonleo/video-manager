@@ -62,17 +62,25 @@ describe("buildPairingPayload", () => {
 
 describe("normalizePairingOrigin", () => {
   it.each([
-    "http://localhost",
-    "http://localhost:8420",
     "http://10.0.0.1:8420",
     "http://10.255.255.255:8420",
     "http://172.16.0.1:8420",
     "http://172.31.255.255:8420",
     "http://192.168.0.1:8420",
-    "http://127.0.0.1:8420",
-    "http://127.255.255.255:8420",
   ])("allows Android HTTP pairing with private IPv4 origin %s", (origin) => {
     expect(normalizePairingOrigin(origin, "android")).toBe(origin);
+  });
+
+  it.each([
+    "http://localhost",
+    "http://localhost:8420",
+    "http://127.0.0.1:8420",
+    "http://127.255.255.255:8420",
+    "http://[::1]:8420",
+  ])("rejects Android loopback origins that point back to the phone %s", (origin) => {
+    expect(() => normalizePairingOrigin(origin, "android")).toThrow(
+      "Android 配对地址不能使用 localhost 或 127.0.0.1",
+    );
   });
 
   it.each(["http://localhost", "http://localhost:8420"])(
@@ -100,7 +108,6 @@ describe("normalizePairingOrigin", () => {
     "http://[fdff:ffff::1]:8420",
     "http://[fe80::1]:8420",
     "http://[febf:ffff::1]:8420",
-    "http://[::1]:8420",
   ])("allows Android HTTP pairing with private IPv6 origin %s", (origin) => {
     expect(normalizePairingOrigin(origin, "android")).toBe(origin);
   });
@@ -134,8 +141,8 @@ describe("normalizePairingOrigin", () => {
     expect(
       normalizePairingOrigin("https://VIDEO.Example.com:8443/", "browser"),
     ).toBe("https://video.example.com:8443");
-    expect(normalizePairingOrigin("http://127.0.0.1:80/", "android")).toBe(
-      "http://127.0.0.1",
+    expect(normalizePairingOrigin("http://192.168.1.70:80/", "android")).toBe(
+      "http://192.168.1.70",
     );
     expect(normalizePairingOrigin("https://example.com:443/", "browser")).toBe(
       "https://example.com",

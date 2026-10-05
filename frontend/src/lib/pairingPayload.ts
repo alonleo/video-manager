@@ -36,6 +36,17 @@ function isPrivateHost(hostname: string): boolean {
     : isPrivateIpv4(hostname);
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (normalized === "localhost" || normalized === "::1") {
+    return true;
+  }
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(normalized)) {
+    return false;
+  }
+  return Number(normalized.split(".", 1)[0]) === 127;
+}
+
 export function normalizePairingOrigin(value: string, mode: PairingMode): string {
   let url: URL;
   try {
@@ -61,6 +72,9 @@ export function normalizePairingOrigin(value: string, mode: PairingMode): string
   }
   if (mode === "browser" && url.protocol !== "https:") {
     throw new Error("浏览器配对必须使用 HTTPS");
+  }
+  if (mode === "android" && isLoopbackHost(url.hostname)) {
+    throw new Error("Android 配对地址不能使用 localhost 或 127.0.0.1");
   }
   if (mode === "android" && url.protocol === "http:" && !isPrivateHost(url.hostname)) {
     throw new Error("Android HTTP 配对只允许私有局域网地址");

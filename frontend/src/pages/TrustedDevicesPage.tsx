@@ -6,13 +6,18 @@ import {
   createPairing,
   decidePairing,
   getPairing,
+  getPairingOrigins,
   listPendingPairings,
   listTrustedDevices,
   revokeTrustedDevice,
   type Pairing,
 } from "../api/deviceAuth";
 import Icon from "../components/Icon";
-import { buildPairingPayload, type PairingMode } from "../lib/pairingPayload";
+import {
+  buildPairingPayload,
+  normalizePairingOrigin,
+  type PairingMode,
+} from "../lib/pairingPayload";
 import "../components/trusted-devices.css";
 
 function formatTime(value: string | null) {
@@ -27,10 +32,24 @@ function formatTime(value: string | null) {
 
 function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void }) {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<PairingMode>("browser");
+  const [mode, setMode] = useState<PairingMode>("android");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [siteOrigin, setSiteOrigin] = useState(window.location.origin);
+  const [originEdited, setOriginEdited] = useState(false);
+  const pairingOrigins = useQuery({
+    queryKey: ["device-pairing-origins"],
+    queryFn: getPairingOrigins,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (originEdited || !pairingOrigins.data?.recommended) return;
+    try {
+      normalizePairingOrigin(window.location.origin, "android");
+    } catch {
+      setSiteOrigin(pairingOrigins.data.recommended);
+    }
+  }, [originEdited, pairingOrigins.data?.recommended]);
   const pairTarget = useMemo(() => {
     try {
       const value = buildPairingPayload(mode, siteOrigin, pairing.token ?? "");
@@ -70,31 +89,41 @@ function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void 
         <legend>扫码设备</legend>
         <div className="pairing-mode-options">
           <label className="pairing-mode-option">
-            <input type="radio" name="pairing-mode" checked={mode === "browser"} onChange={event => {
-              if (!event.currentTarget.checked) return;
-              setMode("browser");
-              setCopied(false);
-              setCopyError(false);
-            }} />
-            浏览器
-          </label>
-          <label className="pairing-mode-option">
             <input type="radio" name="pairing-mode" checked={mode === "android"} onChange={event => {
               if (!event.currentTarget.checked) return;
               setMode("android");
               setCopied(false);
               setCopyError(false);
             }} />
-            Android 应用
+            Android 应用（推荐）
+          </label>
+          <label className="pairing-mode-option">
+            <input type="radio" name="pairing-mode" checked={mode === "browser"} onChange={event => {
+              if (!event.currentTarget.checked) return;
+              setMode("browser");
+              setCopied(false);
+              setCopyError(false);
+            }} />
+            浏览器（仅 HTTPS）
           </label>
         </div>
       </fieldset>
       <p className="pairing-mode-help">
-        {mode === "android" ? "允许私有局域网 HTTP；流量不会被加密" : "浏览器配对必须使用 HTTPS，以安全生成并保存设备密钥。"}
+        {mode === "android"
+          ? `将生成 Android 专用二维码，应用连接地址：${siteOrigin}`
+          : "浏览器配对必须使用 HTTPS，以安全生成并保存设备密钥。"}
       </p>
       <label className="pairing-origin">新设备访问地址
-        <input className="input" type="url" value={siteOrigin} onChange={event => { setSiteOrigin(event.target.value); setCopied(false); setCopyError(false); }} />
+        <input className="input" type="url" value={siteOrigin} onChange={event => {
+          setSiteOrigin(event.target.value);
+          setOriginEdited(true);
+          setCopied(false);
+          setCopyError(false);
+        }} />
       </label>
+      {pairingOrigins.isError && mode === "android" && <p className="inline-alert" role="alert">
+        无法自动识别局域网地址，请填写手机可访问的电脑地址。
+      </p>}
       {pairTarget.error && <p className="inline-alert" role="alert">{pairTarget.error}</p>}
       {pairTarget.url && <div className="pairing-qr"><QRCodeSVG value={pairTarget.url} size={228} level="M" marginSize={2} /></div>}
       <p className="pairing-expiry">二维码两分钟内有效，且只能使用一次。</p>

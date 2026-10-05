@@ -12,7 +12,7 @@
 .pairing-mode-option:has(input:checked) { border-color:var(--accent); color:var(--ink); background:#f4e8e1; }
 .pairing-mode-option:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
 .pairing-mode-option input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent); }
-.pairing-mode-help { max-width:520px; margin:10px auto 0; color:var(--muted); font-size:11px; line-height:1.7; }
+.pairing-mode-help { max-width:520px; margin:10px auto 0; color:var(--muted); font-size:12px; line-height:1.7; overflow-wrap:anywhere; transition:color 180ms ease; }
 .pairing-origin { display:flex; flex-direction:column; gap:8px; max-width:520px; margin:22px auto 0; font-size:12px; font-weight:600; }
 .pairing-qr { width:max-content; margin:24px auto 14px; padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff; line-height:0; }
 .pairing-expiry { text-align:center; }

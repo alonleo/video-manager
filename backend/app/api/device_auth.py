@@ -14,6 +14,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_session
 from app.models import DeviceAuthChallenge, DevicePairing, DeviceSession, TrustedDevice
 from app.services.device_auth import (
@@ -22,6 +23,7 @@ from app.services.device_auth import (
     active_device_count,
     authenticated_device,
     create_device_session,
+    discover_pairing_origins,
     is_loopback,
     is_private_client,
     is_secure,
@@ -144,6 +146,12 @@ async def auth_status(request: Request, session: AsyncSession = Depends(get_sess
         "bootstrap_allowed": not initialized and is_loopback(request),
         "device": device_out(device, device.id) if device else None,
     }
+
+
+@router.get("/device-auth/pairing-origins")
+async def pairing_origins():
+    items = discover_pairing_origins(settings.api_port)
+    return {"items": items, "recommended": items[0] if items else None}
 
 
 @router.post("/device-auth/bootstrap", status_code=status.HTTP_201_CREATED)

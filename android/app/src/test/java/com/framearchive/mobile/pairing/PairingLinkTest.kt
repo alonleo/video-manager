@@ -33,17 +33,21 @@ class PairingLinkTest {
             "172.16.0.1",
             "172.31.255.254",
             "192.168.0.1",
-            "127.0.0.1",
-            "127.255.255.254",
         ).forEach { host -> assertOrigin("http://$host", "http://$host") }
 
         listOf("172.15.255.255", "172.32.0.0").forEach(::assertServerRejected)
     }
 
     @Test
-    fun `accepts localhost over HTTP case insensitively`() {
-        assertOrigin("http://LOCALHOST:80/", "http://localhost")
-        assertOrigin("http://localhost:8080", "http://localhost:8080")
+    fun `rejects loopback origins that would point back to the Android device`() {
+        listOf(
+            "http://localhost:8420",
+            "https://LOCALHOST:8420",
+            "http://127.0.0.1:8420",
+            "https://127.255.255.254:8420",
+            "http://[::1]:8420",
+            "https://[0:0:0:0:0:0:0:1]:8420",
+        ).forEach(::assertServerRejected)
     }
 
     @Test
@@ -52,12 +56,11 @@ class PairingLinkTest {
         assertOrigin("http://[fd12:3456::1]:8080/", "http://[fd12:3456::1]:8080")
         assertOrigin("http://[fe80::1]", "http://[fe80::1]")
         assertOrigin("http://[febf:ffff::1]", "http://[febf:ffff::1]")
-        assertOrigin("http://[::1]", "http://[::1]")
     }
 
     @Test
-    fun `canonicalizes expanded IPv6 loopback and removes the default port`() {
-        assertOrigin("https://[0:0:0:0:0:0:0:1]:443/", "https://[::1]")
+    fun `canonicalizes expanded IPv6 address and removes the default port`() {
+        assertOrigin("https://[2001:0DB8:0:0:0:0:0:1]:443/", "https://[2001:db8::1]")
     }
 
     @Test

@@ -167,6 +167,10 @@ internal object TrustedServerOrigin {
         val host = if (isIpv6) rawHost.substring(1, rawHost.length - 1) else rawHost
         validateHost(host, isIpv6)
 
+        if (isLoopbackHost(host, isIpv6)) {
+            throw InvalidPairingLink("配对服务器不能使用本机回环地址")
+        }
+
         if (scheme == "http" && !isTrustedHttpHost(host, isIpv6)) {
             throw InvalidPairingLink("HTTP 服务器必须位于允许的本地网络")
         }
@@ -220,11 +224,9 @@ internal object TrustedServerOrigin {
     }
 
     private fun isTrustedHttpHost(host: String, isIpv6: Boolean): Boolean {
-        if (!isIpv6 && host == "localhost") return true
         if (!isIpv6) {
             val octets = parseIpv4(host) ?: return false
             return octets[0] == 10 ||
-                octets[0] == 127 ||
                 (octets[0] == 172 && octets[1] in 16..31) ||
                 (octets[0] == 192 && octets[1] == 168)
         }
@@ -237,8 +239,16 @@ internal object TrustedServerOrigin {
         val second = bytes[1]
         val isUniqueLocal = first in 0xfc..0xfd
         val isLinkLocal = first == 0xfe && second in 0x80..0xbf
-        val isLoopback = bytes.take(15).all { it == 0 } && bytes[15] == 1
-        return isUniqueLocal || isLinkLocal || isLoopback
+        return isUniqueLocal || isLinkLocal
+    }
+
+    private fun isLoopbackHost(host: String, isIpv6: Boolean): Boolean {
+        if (!isIpv6) {
+            if (host == "localhost") return true
+            return parseIpv4(host)?.firstOrNull() == 127
+        }
+        val bytes = parseIpv6(host) ?: return false
+        return bytes.take(15).all { it == 0 } && bytes[15] == 1
     }
 
     private fun parseIpv4(host: String): IntArray? {

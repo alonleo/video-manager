@@ -37,7 +37,13 @@ export type PairClaim = {
   status: string;
 };
 
+export type PairingOrigins = {
+  items: string[];
+  recommended: string | null;
+};
+
 export const getDeviceAuthStatus = () => request<DeviceAuthStatus>("/device-auth/status");
+export const getPairingOrigins = () => request<PairingOrigins>("/device-auth/pairing-origins");
 export const bootstrapDevice = (body: DeviceRegistration) =>
   request<TrustedDevice>("/device-auth/bootstrap", { method: "POST", body: JSON.stringify(body) });
 export const createDeviceChallenge = (deviceId: number) =>
