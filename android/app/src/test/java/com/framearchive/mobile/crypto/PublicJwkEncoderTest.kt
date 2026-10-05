@@ -1,9 +1,11 @@
 package com.framearchive.mobile.crypto
 
 import java.math.BigInteger
+import java.security.KeyPairGenerator
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
+import java.security.spec.ECGenParameterSpec
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -93,9 +95,54 @@ class PublicJwkEncoderTest {
     }
 }
 
-class DeviceKeyCreationLockTest {
+class P256KeyValidatorTest {
     @Test
-    fun `serializes device key creation critical sections process wide`() {
+    fun `accepts a generated secp256r1 public key`() {
+        assertTrue(P256KeyValidator.isP256(generateEcKey("secp256r1")))
+    }
+
+    @Test
+    fun `rejects a generated P-384 public key`() {
+        assertFalse(P256KeyValidator.isP256(generateEcKey("secp384r1")))
+    }
+
+    @Test
+    fun `rejects different parameters with the same 256 bit field size`() {
+        val validKey = generateEcKey("secp256r1")
+        val parameters = validKey.params
+        val changedGenerator = ECPoint(
+            parameters.generator.affineX.add(BigInteger.ONE),
+            parameters.generator.affineY,
+        )
+        val changedParameters = ECParameterSpec(
+            parameters.curve,
+            changedGenerator,
+            parameters.order,
+            parameters.cofactor,
+        )
+
+        assertFalse(P256KeyValidator.isP256(keyWithParameters(validKey, changedParameters)))
+    }
+
+    private fun generateEcKey(curve: String): ECPublicKey {
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec(curve))
+        return generator.generateKeyPair().public as ECPublicKey
+    }
+
+    private fun keyWithParameters(key: ECPublicKey, parameters: ECParameterSpec): ECPublicKey =
+        object : ECPublicKey {
+            override fun getW(): ECPoint = key.w
+            override fun getParams(): ECParameterSpec = parameters
+            override fun getAlgorithm(): String = key.algorithm
+            override fun getFormat(): String? = key.format
+            override fun getEncoded(): ByteArray = key.encoded
+        }
+}
+
+class DeviceKeyCreationLockPrimitiveTest {
+    @Test
+    fun `shared lock primitive serializes process-wide critical sections`() {
         val executor = Executors.newFixedThreadPool(2)
         val firstEntered = CountDownLatch(1)
         val releaseFirst = CountDownLatch(1)

@@ -3,12 +3,16 @@ package com.framearchive.mobile.crypto
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.math.BigInteger
+import java.security.AlgorithmParameters
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
+import java.security.spec.ECField
+import java.security.spec.ECFieldFp
 import java.security.spec.ECGenParameterSpec
+import java.security.spec.ECParameterSpec
 import java.util.Base64
 
 data class PublicJwk(
@@ -38,6 +42,32 @@ internal object PublicJwkEncoder {
         val fixedWidth = ByteArray(COORDINATE_SIZE)
         unsigned.copyInto(fixedWidth, destinationOffset = COORDINATE_SIZE - unsigned.size)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(fixedWidth)
+    }
+}
+
+internal object P256KeyValidator {
+    private val expectedParameters: ECParameterSpec by lazy {
+        AlgorithmParameters.getInstance("EC").run {
+            init(ECGenParameterSpec("secp256r1"))
+            getParameterSpec(ECParameterSpec::class.java)
+        }
+    }
+
+    fun isP256(publicKey: ECPublicKey): Boolean {
+        val actual = publicKey.params ?: return false
+        val expected = expectedParameters
+        return fieldsEqual(actual.curve.field, expected.curve.field) &&
+            actual.curve.a == expected.curve.a &&
+            actual.curve.b == expected.curve.b &&
+            actual.generator.affineX == expected.generator.affineX &&
+            actual.generator.affineY == expected.generator.affineY &&
+            actual.order == expected.order &&
+            actual.cofactor == expected.cofactor
+    }
+
+    private fun fieldsEqual(actual: ECField, expected: ECField): Boolean {
+        if (actual.fieldSize != expected.fieldSize) return false
+        return actual is ECFieldFp && expected is ECFieldFp && actual.p == expected.p
     }
 }
 
@@ -116,6 +146,9 @@ class DeviceKeyStore {
         }
         val publicKey = privateKeyEntry.certificate.publicKey as? ECPublicKey
             ?: throw IllegalStateException("Certificate for alias '$alias' does not contain an EC public key")
+        if (!P256KeyValidator.isP256(publicKey)) {
+            throw IllegalStateException("EC key for alias '$alias' is not P-256 (secp256r1)")
+        }
         return ValidatedDeviceKey(privateKey, publicKey)
     }
 
