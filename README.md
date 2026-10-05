@@ -124,9 +124,7 @@ Android 客户端支持 Android 8.0（API 26）及以上版本。先在一台已
 HTTP 中的视频、照片、会话信息和操作内容仍可能被同一网络中的攻击者窃听或篡改，建议配置
 可信 HTTPS。信任设备机制只负责设备身份与访问授权，**不等于网络加密**。
 
-构建后的安装包位于仓库内 `artifacts/frame-archive-mobile-0.1.0.apk`；本机当前仓库的绝对路径为
-`/home/leo/.codex/worktrees/android-webview-client/video-manage/artifacts/frame-archive-mobile-0.1.0.apk`。
-安装前可在项目根目录核对完整性：
+构建后的安装包位于仓库内 `artifacts/frame-archive-mobile-0.1.0.apk`。安装前可在项目根目录核对完整性：
 
 ```bash
 cd artifacts

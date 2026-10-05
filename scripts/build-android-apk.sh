@@ -29,12 +29,14 @@ FRAMEARCHIVE_KEY_PASSWORD=''
 temporary_keystore=''
 temporary_properties=''
 temporary_apk=''
+temporary_apk_idsig=''
 temporary_sha=''
 
 cleanup() {
     [[ -z "$temporary_keystore" ]] || rm -f -- "$temporary_keystore"
     [[ -z "$temporary_properties" ]] || rm -f -- "$temporary_properties"
     [[ -z "$temporary_apk" ]] || rm -f -- "$temporary_apk"
+    [[ -z "$temporary_apk_idsig" ]] || rm -f -- "$temporary_apk_idsig"
     [[ -z "$temporary_sha" ]] || rm -f -- "$temporary_sha"
     unset FRAMEARCHIVE_STORE_PASSWORD FRAMEARCHIVE_KEY_PASSWORD
 }
@@ -191,6 +193,7 @@ printf '%s\n' '正在执行 release 单元测试、Lint 和 APK 构建……'
 # 并显式生成兼容 Android 8+ 的 v1 与 v2 签名后再发布。
 mkdir -p -- "$ARTIFACT_DIR"
 temporary_apk="$(mktemp "$ARTIFACT_DIR/.${ARTIFACT_NAME}.XXXXXX")"
+temporary_apk_idsig="${temporary_apk}.idsig"
 rm -f -- "$temporary_apk"
 $APKSIGNER sign \
     --ks "$KEYSTORE_FILE" \
@@ -200,6 +203,7 @@ $APKSIGNER sign \
     --min-sdk-version 21 \
     --v1-signing-enabled true \
     --v2-signing-enabled true \
+    --v4-signing-enabled false \
     --out "$temporary_apk" \
     "$BUILT_APK"
 
@@ -216,6 +220,8 @@ if grep -Fqi 'Android Debug' <<<"$verify_output"; then
 fi
 unzip -tq "$temporary_apk" >/dev/null || fail "release APK 的 ZIP 结构无效"
 
+rm -f -- "$temporary_apk_idsig"
+temporary_apk_idsig=''
 chmod 644 -- "$temporary_apk"
 mv -f -- "$temporary_apk" "$ARTIFACT_APK"
 temporary_apk=''
