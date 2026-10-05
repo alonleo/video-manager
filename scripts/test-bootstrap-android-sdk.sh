@@ -4,6 +4,7 @@ set -u -o pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap-android-sdk.sh"
+LOCAL_PROPERTIES_MARKER='# Managed by scripts/bootstrap-android-sdk.sh; this file may be replaced.'
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/framearchive-bootstrap-tests.XXXXXX")"
 failures=0
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
@@ -84,10 +85,58 @@ test_writes_escaped_local_properties_before_license_prompt() {
         fail "bootstrap must stop for interactive license review"
     fi
 
-    local expected="sdk.dir=$case_root/project\\ with\\ spaces\\:\\#\\!\\=\\\\path/.android-sdk"
+    local expected="$LOCAL_PROPERTIES_MARKER"$'\n'"sdk.dir=$case_root/project\\ with\\ spaces\\:\\#\\!\\=\\\\path/.android-sdk"
     local actual=''
     [[ -f "$project_root/android/local.properties" ]] && actual="$(<"$project_root/android/local.properties")"
     [[ "$actual" == "$expected" ]] || fail "bootstrap must atomically write escaped local.properties; expected <$expected>, got <$actual>"
+}
+
+test_updates_script_managed_local_properties() {
+    local case_root="$TEST_ROOT/managed-local-properties-case"
+    local project_root="$case_root/project"
+    local fake_bin="$case_root/fake-bin"
+    local download_log="$case_root/download.log"
+    make_project "$project_root"
+    make_fake_commands "$fake_bin"
+    printf '%s\nsdk.dir=/obsolete/sdk\n' "$LOCAL_PROPERTIES_MARKER" >"$project_root/android/local.properties"
+
+    PATH="$fake_bin:$PATH" \
+        FAKE_DOWNLOAD_LOG="$download_log" \
+        FAKE_TOOLS_REVISION="22.0" \
+        "$project_root/scripts/bootstrap-android-sdk.sh" </dev/null >/dev/null 2>&1
+
+    local expected="$LOCAL_PROPERTIES_MARKER"$'\n'"sdk.dir=$project_root/.android-sdk"
+    local actual=''
+    actual="$(<"$project_root/android/local.properties")"
+    [[ "$actual" == "$expected" ]] || fail "bootstrap must update a local.properties file carrying its exact ownership marker"
+}
+
+test_refuses_to_overwrite_developer_owned_local_properties() {
+    local case_root="$TEST_ROOT/developer-owned-local-properties-case"
+    local project_root="$case_root/project"
+    local fake_bin="$case_root/fake-bin"
+    local download_log="$case_root/download.log"
+    local properties_file="$project_root/android/local.properties"
+    local snapshot_file="$case_root/local.properties.snapshot"
+    local output status
+    make_project "$project_root"
+    make_fake_commands "$fake_bin"
+    printf '%s\n%s\n%s\n' \
+        '# Keep this developer setting' \
+        'cmake.dir=/opt/android-cmake' \
+        'sdk.dir=/developer/android-sdk' \
+        >"$properties_file"
+    cp "$properties_file" "$snapshot_file"
+
+    output="$(PATH="$fake_bin:$PATH" \
+        FAKE_DOWNLOAD_LOG="$download_log" \
+        FAKE_TOOLS_REVISION="22.0" \
+        "$project_root/scripts/bootstrap-android-sdk.sh" </dev/null 2>&1)"
+    status=$?
+
+    [[ "$status" -ne 0 ]] || fail "bootstrap must fail for a developer-owned local.properties"
+    [[ "$output" == *'不会覆盖'* ]] || fail "bootstrap must clearly explain that it will not overwrite local.properties"
+    cmp -s "$properties_file" "$snapshot_file" || fail "bootstrap must preserve every byte of a developer-owned local.properties"
 }
 
 test_reinstalls_when_marker_is_forged_but_revision_is_wrong() {
@@ -119,6 +168,8 @@ test_reinstalls_when_marker_is_forged_but_revision_is_wrong() {
 }
 
 test_writes_escaped_local_properties_before_license_prompt
+test_updates_script_managed_local_properties
+test_refuses_to_overwrite_developer_owned_local_properties
 test_reinstalls_when_marker_is_forged_but_revision_is_wrong
 
 if ((failures > 0)); then

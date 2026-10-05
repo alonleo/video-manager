@@ -12,6 +12,7 @@ TOOLS_URL="https://dl.google.com/android/repository/$TOOLS_ARCHIVE"
 TOOLS_DIR="$ANDROID_SDK_DIR/cmdline-tools/latest"
 TOOLS_MARKER="$TOOLS_DIR/.framearchive-command-line-tools"
 SDKMANAGER="$TOOLS_DIR/bin/sdkmanager"
+LOCAL_PROPERTIES_MARKER='# Managed by scripts/bootstrap-android-sdk.sh; this file may be replaced.'
 
 tools_payload_matches() {
     local tools_dir="$1"
@@ -81,16 +82,36 @@ escape_java_properties_value() {
     printf '%s' "$escaped"
 }
 
+local_properties_is_managed() {
+    local properties_file="$1" actual_content='' expected_content=''
+    local -a lines=()
+    [[ -f "$properties_file" && ! -L "$properties_file" ]] || return 1
+    mapfile -t lines <"$properties_file"
+    [[ ${#lines[@]} -eq 2 ]] \
+        && [[ "${lines[0]}" == "$LOCAL_PROPERTIES_MARKER" ]] \
+        && [[ "${lines[1]}" == sdk.dir=* ]] \
+        || return 1
+    printf -v expected_content '%s\n%s\n' "$LOCAL_PROPERTIES_MARKER" "${lines[1]}"
+    IFS= read -r -d '' actual_content <"$properties_file" || true
+    [[ "$actual_content" == "$expected_content" ]]
+}
+
 write_local_properties() (
     set -euo pipefail
     local properties_dir properties_file temporary_file escaped_sdk_dir
     properties_dir="$PROJECT_ROOT/android"
     properties_file="$properties_dir/local.properties"
     mkdir -p "$properties_dir"
+    if [[ -e "$properties_file" || -L "$properties_file" ]] \
+        && ! local_properties_is_managed "$properties_file"; then
+        printf '错误：%s 已存在且不是本脚本管理的精确格式；为避免丢失本地配置，不会覆盖。\n' "$properties_file" >&2
+        printf '%s\n' '请手工设置 sdk.dir，或备份并删除/迁移该文件后重试。' >&2
+        exit 1
+    fi
     temporary_file="$(mktemp "$properties_dir/.local.properties.XXXXXX")"
     trap 'rm -f -- "$temporary_file"' EXIT
     escaped_sdk_dir="$(escape_java_properties_value "$ANDROID_SDK_DIR")"
-    printf 'sdk.dir=%s\n' "$escaped_sdk_dir" >"$temporary_file"
+    printf '%s\nsdk.dir=%s\n' "$LOCAL_PROPERTIES_MARKER" "$escaped_sdk_dir" >"$temporary_file"
     mv -- "$temporary_file" "$properties_file"
 )
 
