@@ -46,4 +46,5 @@ frontend/dist/
 /android/local.properties
 /android/**/build/
 /android/signing/
+/android/.signing.new.*/
 /artifacts/
