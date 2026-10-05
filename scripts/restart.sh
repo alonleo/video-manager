@@ -57,7 +57,7 @@ sleep 1
 
 echo "==> 启动"
 cd "$BACKEND"
-start_one api "$VENV/uvicorn" app.main:app --host 127.0.0.1 --port 8420
+start_one api "$VENV/uvicorn" app.main:app --host 0.0.0.0 --port 8420
 start_one worker "$VENV/arq" app.workers.settings.WorkerSettings
 start_one enhancement_worker "$VENV/arq" app.workers.enhancement_settings.WorkerSettings
 start_one move_worker "$VENV/arq" app.workers.move_settings.WorkerSettings
@@ -83,4 +83,5 @@ curl -s --noproxy '*' -m 30 http://127.0.0.1:8420/api/health \
 
 echo
 echo "  界面   http://127.0.0.1:8420"
+echo "  局域网 请通过已配置的 HTTPS 地址访问"
 echo "  日志   $RUN/api.log  $RUN/worker.log"

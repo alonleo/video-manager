@@ -226,7 +226,9 @@ async def test_batch_is_bounded_and_does_not_fetch_subtitle_text(status_env):
     response = await statuses(client, list(range(1, 41)) + [1, 9999])
     event.remove(engine.sync_engine, "before_cursor_execute", record)
     assert len(response["items"]) == 40 and response["missing_ids"] == [9999]
-    assert len(statements) == 3
+    # 全局设备门禁会先查询一次是否已初始化；这里只约束字幕批量接口自身的查询数。
+    content_statements = [statement for statement in statements if "trusted_devices" not in statement]
+    assert len(content_statements) == 3
     assert "fixture subtitle" not in str(response)
     assert "payload" not in str(response)
 

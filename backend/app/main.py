@@ -14,10 +14,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import jobs, misc, operations, playback, storages, videos, photos
-from app.api import categories, downloads, enhancement, subtitles
-from app.api import enhancement
+from app.api import (
+    categories,
+    device_auth,
+    downloads,
+    enhancement,
+    jobs,
+    misc,
+    operations,
+    photos,
+    playback,
+    storages,
+    subtitles,
+    videos,
+)
 from app.config import PROJECT_ROOT, settings
+from app.middleware.device_auth import TrustedDeviceMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,7 +75,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
 )
+app.add_middleware(TrustedDeviceMiddleware)
 
+app.include_router(device_auth.router)
 app.include_router(videos.router)
 app.include_router(photos.router)
 app.include_router(categories.router)

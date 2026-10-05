@@ -29,6 +29,7 @@ from sqlalchemy import (
     TypeDecorator,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -365,6 +366,76 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
+# ---------------------------------------------------------------- 信任设备
+
+
+class TrustedDevice(Base):
+    __tablename__ = "trusted_devices"
+    __table_args__ = (
+        Index(
+            "uq_single_bootstrap_device",
+            "is_bootstrap",
+            unique=True,
+            sqlite_where=text("is_bootstrap = 1"),
+            postgresql_where=text("is_bootstrap IS TRUE"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    public_key: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(Text, default="pending", index=True)
+    is_bootstrap: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class DevicePairing(Base):
+    __tablename__ = "device_pairings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    claim_secret_hash: Mapped[str | None] = mapped_column(Text, unique=True)
+    verification_code: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, default="open", index=True)
+    created_by_device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trusted_devices.id", ondelete="CASCADE")
+    )
+    requested_device_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("trusted_devices.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class DeviceAuthChallenge(Base):
+    __tablename__ = "device_auth_challenges"
+
+    challenge_hash: Mapped[str] = mapped_column(Text, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trusted_devices.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class DeviceSession(Base):
+    __tablename__ = "device_sessions"
+
+    token_hash: Mapped[str] = mapped_column(Text, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trusted_devices.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
 # ---------------------------------------------------------------- 设置
 
 
@@ -395,6 +466,10 @@ __all__ = [
     "AISummary",
     "AIKeypoint",
     "Job",
+    "TrustedDevice",
+    "DevicePairing",
+    "DeviceAuthChallenge",
+    "DeviceSession",
     "Setting",
 ]
 

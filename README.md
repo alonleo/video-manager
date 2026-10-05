@@ -85,7 +85,7 @@ pnpm build                    # 构建产物交给后端托管
 
 ```bash
 cd backend
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8420   # API + 前端
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8420     # API + 前端，监听局域网
 uv run arq app.workers.settings.WorkerSettings              # 后台任务
 ```
 
@@ -95,8 +95,23 @@ uv run arq app.workers.settings.WorkerSettings              # 后台任务
 ./scripts/dev.sh
 ```
 
-访问 <http://127.0.0.1:8420>（生产）或 <http://127.0.0.1:5173>（开发）。
+首次启动请在服务器本机访问 <http://127.0.0.1:8420>，按页面提示初始化首台信任设备。
+开发模式访问 <http://127.0.0.1:5173>。
 API 文档在 `/docs`。
+
+#### 局域网与信任设备
+
+服务默认监听所有网卡，但所有影像与管理 API 在初始化后只接受信任设备：
+
+1. 在服务器本机通过 `http://127.0.0.1:8420` 完成首台设备初始化。
+2. 先为局域网访问配置最终的 HTTPS 地址，例如 `https://video.home`。
+3. 在首台设备的「设置 → 信任设备」中生成二维码，并把“新设备访问地址”填写为该 HTTPS 地址。
+4. 用新设备扫描二维码，核对两端的六位验证码，再由已有设备批准。
+5. 设备丢失时，在同一页面撤销；其现有会话会立即失效。
+
+除服务器本机的 `localhost` 外，浏览器只允许在 HTTPS 页面生成设备私钥。请在本服务前配置
+局域网反向代理与可信证书，并将 HTTPS 请求转发到 `127.0.0.1:8420`；不要通过明文
+`http://局域网IP:8420` 进行配对。代理应保留原始 `Host`，并正确传递客户端协议。
 
 ### 5. 添加视频
 

@@ -16,6 +16,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DownloadsPage from "./pages/DownloadsPage";
 import DownloadSettingsPage from "./pages/DownloadSettingsPage";
 import "./components/player/player-controls.css";
+import DeviceAccessGate from "./components/DeviceAccessGate";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,7 +33,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Routes>
+        <DeviceAccessGate><Routes>
           <Route element={<App />}>
             <Route index element={<LibraryPage key="videos" />} />
             <Route path="photos" element={<LibraryPage key="photos" mediaType="photo" />} />
@@ -45,9 +46,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/playback" element={<SettingsPage />} />
             <Route path="settings/ai" element={<SettingsPage />} />
+            <Route path="settings/devices" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
-        </Routes>
+        </Routes></DeviceAccessGate>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,

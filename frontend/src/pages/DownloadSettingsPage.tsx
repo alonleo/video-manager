@@ -23,7 +23,7 @@ export default function DownloadSettingsPage() {
       <h1>让下载，顺畅一点。</h1><p className="page-intro">为视频站点配置网络与登录信息。</p></div>
       <Link className="btn-outline" to="/downloads"><Icon name="back" size={16} />返回链接下载</Link></div>
     <nav className="download-settings-tabs" aria-label="设置分类">
-      <Link to="/settings">字幕与翻译</Link><Link to="/settings/playback">播放与轮播</Link><Link to="/settings/ai">AI 模型与服务</Link><Link to="/settings/downloads" aria-current="page">链接下载</Link>
+      <Link to="/settings">字幕与翻译</Link><Link to="/settings/playback">播放与轮播</Link><Link to="/settings/ai">AI 模型与服务</Link><Link to="/settings/downloads" aria-current="page">链接下载</Link><Link to="/settings/devices">信任设备</Link>
     </nav>
     {query.isError && <p className="inline-alert" role="alert">{query.error.message}<button onClick={() => query.refetch()}>重试</button></p>}
     {!form && !query.isError && <p role="status">正在读取下载设置…</p>}

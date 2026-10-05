@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     asr_whisper_model: str = "large-v3"
 
     # ---------- 服务 ----------
-    api_host: str = "127.0.0.1"
+    api_host: str = "0.0.0.0"
     api_port: int = 8420
 
     @property

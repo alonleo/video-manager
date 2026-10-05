@@ -22,6 +22,7 @@ dependencies = [
     "playwright>=1.55,<2",
     "pillow>=12,<13",
     "pillow-heif>=1,<2",
+    "cryptography>=44,<51",
 ]
 
 [project.optional-dependencies]

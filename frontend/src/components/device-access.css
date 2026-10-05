@@ -1,0 +1,13 @@
+.device-access-page { min-height:100dvh; display:grid; place-items:center; padding:28px; background:radial-gradient(circle at 50% 0,#f4ede0,#e7e8dc 62%,#dce3d8); }
+.device-access-card { width:min(100%,560px); padding:38px; box-shadow:0 24px 70px #25382d20; }
+.device-access-mark { width:58px; height:58px; display:grid; place-items:center; margin-bottom:25px; border-radius:16px; background:#253b31; color:#f5d2b8; }
+.device-access-card h1 { margin:11px 0 14px; font-family:var(--serif); font-size:34px; line-height:1.35; }
+.device-access-card > p:not(.eyebrow,.inline-alert,.device-waiting) { color:var(--muted); font-size:14px; line-height:1.9; margin-bottom:22px; }
+.device-access-card label { display:flex; flex-direction:column; gap:8px; margin:23px 0; font-size:13px; font-weight:600; }
+.device-access-card .btn-primary, .device-access-card .btn-outline { width:100%; }
+.device-access-help { display:block; margin-top:18px; text-align:center; color:var(--accent); font-size:12px; }
+.device-verification-code { display:block; margin:28px 0; text-align:center; color:#263b31; font-size:42px; letter-spacing:8px; font-variant-numeric:tabular-nums; }
+.device-waiting { text-align:center; color:var(--muted); font-size:12px; }
+.device-waiting span { display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:#6f8c6a; animation:device-pulse 1.3s infinite; }
+@keyframes device-pulse { 50% { opacity:.3; transform:scale(.75); } }
+@media(max-width:600px) { .device-access-page { padding:14px; } .device-access-card { padding:28px 20px; } .device-access-card h1 { font-size:28px; } }
