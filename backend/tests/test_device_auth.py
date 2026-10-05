@@ -129,6 +129,60 @@ async def test_android_can_pair_over_http_from_private_address(auth_env):
 
 
 @pytest.mark.asyncio
+async def test_android_private_http_pairing_authentication_and_revocation(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+    pairing = (await local.post("/api/trusted-devices/pairings")).json()
+    private, public_jwk = device_key()
+    android = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("192.168.1.70", 4321)),
+        base_url="http://192.168.1.70:8420",
+    )
+    try:
+        request_body = {
+            "token": pairing["token"],
+            "name": "Android 端到端设备",
+            "public_key": public_jwk,
+            "client_type": "android",
+        }
+        requested = await android.post("/api/device-auth/pair", json=request_body)
+        assert requested.status_code == 202
+        claim = requested.json()
+
+        replayed = await android.post("/api/device-auth/pair", json=request_body)
+        assert replayed.status_code == 409
+        assert (await android.get("/api/videos")).status_code == 401
+
+        approved = await local.post(
+            f"/api/trusted-devices/pairings/{pairing['id']}/approve"
+        )
+        assert approved.status_code == 200
+        challenge = (
+            await android.post(
+                "/api/device-auth/challenge", json={"device_id": claim["device_id"]}
+            )
+        ).json()["challenge"]
+        verified = await android.post(
+            "/api/device-auth/verify",
+            json={
+                "device_id": claim["device_id"],
+                "challenge": challenge,
+                "signature": sign(private, challenge),
+            },
+        )
+        assert verified.status_code == 200
+        assert "frame_device_session=" in verified.headers["set-cookie"]
+        assert android.cookies.get("frame_device_session")
+        assert (await android.get("/api/videos")).status_code == 200
+
+        revoked = await local.delete(f"/api/trusted-devices/{claim['device_id']}")
+        assert revoked.status_code == 204
+        assert (await android.get("/api/videos")).status_code == 401
+    finally:
+        await android.aclose()
+
+
+@pytest.mark.asyncio
 async def test_browser_cannot_pair_over_http_from_private_address_by_default(auth_env):
     local, _ = auth_env
     await bootstrap_admin(local)

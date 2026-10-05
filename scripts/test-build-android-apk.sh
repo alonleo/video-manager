@@ -147,9 +147,57 @@ test_signer_continuity_preserves_old_release() {
     [[ ! -e "$root/artifacts/.build-android-apk.lock.d" ]]
 }
 
+test_publish_failure_after_apk_rename_restores_old_release() {
+    local root apk_before sha_before apk_after sha_after leftovers
+    root="$(make_root publish-rollback)"
+    run_build "$root" >/dev/null 2>&1
+    apk_before="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk" | cut -d' ' -f1)"
+    sha_before="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk.sha256" | cut -d' ' -f1)"
+    if FRAMEARCHIVE_BUILD_TEST_ROOT="$root" \
+        FRAMEARCHIVE_TEST_FAIL_AFTER_APK_RENAME=1 \
+        FRAMEARCHIVE_TEST_INPUT_APK="$INPUT_APK" \
+        "$root/scripts/build-android-apk.sh" >/dev/null 2>&1; then
+        printf '%s\n' 'APK rename 后的发布失败测试应当失败' >&2
+        return 1
+    fi
+    apk_after="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk" | cut -d' ' -f1)"
+    sha_after="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk.sha256" | cut -d' ' -f1)"
+    [[ "$apk_before" == "$apk_after" ]]
+    [[ "$sha_before" == "$sha_after" ]]
+    (cd "$root/artifacts" && sha256sum --check --status frame-archive-mobile-0.1.0.apk.sha256)
+    [[ ! -e "$root/artifacts/.build-android-apk.lock.d" ]]
+    leftovers="$(find "$root/artifacts" -maxdepth 1 \
+        \( -name '.release-backup.*' -o -name '.frame-archive-mobile-0.1.0.apk.*' \) \
+        -print -quit)"
+    [[ -z "$leftovers" ]]
+}
+
+test_publish_failure_hook_is_refused_in_formal_root() {
+    local root apk_before sha_before apk_after sha_after
+    root="$(make_root formal-publish-hook-refusal)"
+    run_build "$root" >/dev/null 2>&1
+    apk_before="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk" | cut -d' ' -f1)"
+    sha_before="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk.sha256" | cut -d' ' -f1)"
+    mkdir -- "$root/.git"
+    if FRAMEARCHIVE_BUILD_TEST_ROOT="$root" \
+        FRAMEARCHIVE_TEST_FAIL_AFTER_APK_RENAME=1 \
+        FRAMEARCHIVE_TEST_INPUT_APK="$INPUT_APK" \
+        "$root/scripts/build-android-apk.sh" >/dev/null 2>&1; then
+        printf '%s\n' '正式项目目录必须拒绝发布回滚测试钩子' >&2
+        return 1
+    fi
+    apk_after="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk" | cut -d' ' -f1)"
+    sha_after="$(sha256sum "$root/artifacts/frame-archive-mobile-0.1.0.apk.sha256" | cut -d' ' -f1)"
+    [[ "$apk_before" == "$apk_after" ]]
+    [[ "$sha_before" == "$sha_after" ]]
+    [[ ! -e "$root/artifacts/.build-android-apk.lock.d" ]]
+}
+
 test_symlink_lock_is_fail_closed
 test_lock_competition_is_fail_fast
 test_signing_initialization_is_transactional
 test_signing_failure_hook_is_refused_in_formal_root
 test_signer_continuity_preserves_old_release
-printf '%s\n' 'Android 发布脚本隔离测试通过（锁、防半套签名、signer 连续性）。'
+test_publish_failure_after_apk_rename_restores_old_release
+test_publish_failure_hook_is_refused_in_formal_root
+printf '%s\n' 'Android 发布脚本隔离测试通过（锁、防半套签名、signer 连续性、原子回滚）。'

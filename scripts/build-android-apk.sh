@@ -344,6 +344,13 @@ fi
 publish_in_progress=1
 mv -f -- "$temporary_apk" "$ARTIFACT_APK"
 temporary_apk=''
+if [[ -n "${FRAMEARCHIVE_TEST_FAIL_AFTER_APK_RENAME:-}" ]]; then
+    [[ "${FRAMEARCHIVE_TEST_FAIL_AFTER_APK_RENAME}" == 1 \
+        && "${FRAMEARCHIVE_BUILD_TEST_ROOT:-}" == "$PROJECT_ROOT" \
+        && ! -e "$PROJECT_ROOT/.git" ]] \
+        || fail "拒绝在正式项目目录启用发布回滚测试钩子"
+    fail "测试钩子：在 APK rename 后、SHA-256 rename 前模拟失败"
+fi
 mv -f -- "$temporary_sha" "$ARTIFACT_SHA"
 temporary_sha=''
 (cd "$ARTIFACT_DIR" && sha256sum --check --status "${ARTIFACT_NAME}.sha256") \
