@@ -5,10 +5,14 @@ import java.security.interfaces.ECPublicKey
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PublicJwkEncoderTest {
@@ -86,5 +90,40 @@ class PublicJwkEncoderTest {
         override fun getAlgorithm(): String = "EC"
         override fun getFormat(): String? = null
         override fun getEncoded(): ByteArray? = null
+    }
+}
+
+class DeviceKeyCreationLockTest {
+    @Test
+    fun `serializes device key creation critical sections process wide`() {
+        val executor = Executors.newFixedThreadPool(2)
+        val firstEntered = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val secondEntered = CountDownLatch(1)
+
+        try {
+            val first = executor.submit {
+                DeviceKeyStore.withCreationLock {
+                    firstEntered.countDown()
+                    check(releaseFirst.await(1, TimeUnit.SECONDS))
+                }
+            }
+            assertTrue(firstEntered.await(1, TimeUnit.SECONDS))
+
+            val second = executor.submit {
+                DeviceKeyStore.withCreationLock {
+                    secondEntered.countDown()
+                }
+            }
+
+            assertFalse(secondEntered.await(100, TimeUnit.MILLISECONDS))
+            releaseFirst.countDown()
+            first.get(1, TimeUnit.SECONDS)
+            second.get(1, TimeUnit.SECONDS)
+            assertTrue(secondEntered.await(1, TimeUnit.SECONDS))
+        } finally {
+            releaseFirst.countDown()
+            executor.shutdownNow()
+        }
     }
 }

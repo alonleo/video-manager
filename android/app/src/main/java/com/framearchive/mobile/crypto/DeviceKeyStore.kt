@@ -43,13 +43,12 @@ internal object PublicJwkEncoder {
 
 class DeviceKeyStore {
     /** Returns the existing public key for [alias] instead of replacing device identity. */
-    @Synchronized
-    fun create(alias: String): PublicJwk {
+    fun create(alias: String): PublicJwk = withCreationLock {
         requireAlias(alias)
         val store = keyStore()
         val existingEntry = store.getEntry(alias, null)
         if (existingEntry != null) {
-            return PublicJwkEncoder.encode(validateEntry(alias, existingEntry).publicKey)
+            return@withCreationLock PublicJwkEncoder.encode(validateEntry(alias, existingEntry).publicKey)
         }
 
         val generator = KeyPairGenerator.getInstance(
@@ -67,7 +66,7 @@ class DeviceKeyStore {
         generator.generateKeyPair()
 
         val generatedEntry = validatedEntry(keyStore(), alias)
-        return PublicJwkEncoder.encode(generatedEntry.publicKey)
+        PublicJwkEncoder.encode(generatedEntry.publicKey)
     }
 
     fun publicJwk(alias: String): PublicJwk {
@@ -124,8 +123,14 @@ class DeviceKeyStore {
         require(alias.isNotBlank()) { "Key alias must not be blank" }
     }
 
-    private companion object {
+    internal companion object {
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
+
+        // Serializes creation across every DeviceKeyStore instance in this process.
+        // Cross-process coordination remains the Android Keystore provider's responsibility.
+        private val creationLock = Any()
+
+        internal fun <T> withCreationLock(block: () -> T): T = synchronized(creationLock, block)
     }
 
     private data class ValidatedDeviceKey(
