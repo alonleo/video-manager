@@ -88,6 +88,15 @@ class PairingLinkTest {
     }
 
     @Test
+    fun `canonicalizes all-zero and trailing-zero IPv6 runs`() {
+        assertOrigin("https://[0:0:0:0:0:0:0:0]", "https://[::]")
+        assertOrigin(
+            "https://[2001:0DB8:0001:0002:0000:0000:0000:0000]",
+            "https://[2001:db8:1:2::]",
+        )
+    }
+
+    @Test
     fun `rejects disallowed and IPv4-mapped IPv6 over HTTP`() {
         listOf(
             "http://[fec0::1]",
@@ -124,6 +133,8 @@ class PairingLinkTest {
             "https://example.com:0",
             "https://example.com:65536",
             "https://example.com:not-a-port",
+            "https://example.com.",
+            "https://[fe80::1%25eth0]",
         ).forEach(::assertServerRejected)
     }
 
@@ -144,6 +155,7 @@ class PairingLinkTest {
             "framearchive://pair/path?v=1&server=$validServer&token=abc",
             "framearchive://pair/?v=1&server=$validServer&token=abc",
             "framearchive://pair?v=1&server=$validServer&token=abc#fragment",
+            "framearchive://pair:?v=1&server=$validServer&token=abc",
             "framearchive://pair:123?v=1&server=$validServer&token=abc",
             "framearchive://user@pair?v=1&server=$validServer&token=abc",
             "framearchive://pair?v=1&server=%ZZ&token=abc",
@@ -170,6 +182,13 @@ class PairingLinkTest {
     }
 
     @Test
+    fun `rejects control characters embedded in tokens`() {
+        listOf("abc\u0000def", "abc\rdef", "abc\ndef", "abc\u007fdef").forEach { token ->
+            assertPairingRejected(pairingUrl("https://example.com", token))
+        }
+    }
+
+    @Test
     fun `decodes token exactly once and preserves meaningful whitespace`() {
         val plus = PairingLink.parse(
             "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=a%2Bb",
@@ -188,6 +207,23 @@ class PairingLinkTest {
         assertEquals(
             urlSafeBase64,
             PairingLink.parse(pairingUrl("https://example.com", urlSafeBase64)).token,
+        )
+    }
+
+    @Test
+    fun `keeps percent-encoded query delimiters inside the token value`() {
+        val link = PairingLink.parse(
+            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com%3A8443&token=a%26b%3Dc",
+        )
+
+        assertEquals("https://example.com:8443", link.serverOrigin)
+        assertEquals("a&b=c", link.token)
+    }
+
+    @Test
+    fun `rejects invalid UTF-8 in percent-encoded values`() {
+        assertPairingRejected(
+            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=%C3%28",
         )
     }
 

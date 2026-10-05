@@ -20,8 +20,8 @@ data class PairingLink(val serverOrigin: String, val token: String) {
                 }
 
                 val token = parameters.getValue("token")
-                if (token.isBlank()) {
-                    throw InvalidPairingLink("配对 token 不能为空")
+                if (token.isBlank() || token.any { it.isISOControl() }) {
+                    throw InvalidPairingLink("配对 token 不能为空或包含控制字符")
                 }
 
                 return PairingLink(
@@ -39,7 +39,7 @@ data class PairingLink(val serverOrigin: String, val token: String) {
             if (
                 !uri.scheme.equals("framearchive", ignoreCase = true) ||
                 !uri.host.equals("pair", ignoreCase = true) ||
-                uri.rawAuthority == null ||
+                !uri.rawAuthority.equals("pair", ignoreCase = true) ||
                 uri.rawUserInfo != null ||
                 uri.port != -1 ||
                 !uri.rawPath.isNullOrEmpty() ||
