@@ -22,6 +22,18 @@ from app.models import DeviceSession, TrustedDevice
 
 SESSION_COOKIE = "frame_device_session"
 SESSION_DAYS = 30
+PRIVATE_CLIENT_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "fc00::/7",
+        "fe80::/10",
+        "::1/128",
+    )
+)
 
 
 def utcnow() -> datetime:
@@ -82,7 +94,9 @@ def is_private_client(request: Request) -> bool:
         address = ipaddress.ip_address(request.client.host if request.client else "")
     except ValueError:
         return False
-    return address.is_private or address.is_loopback or address.is_link_local
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return False
+    return any(address in network for network in PRIVATE_CLIENT_NETWORKS)
 
 
 def is_secure(request: Request) -> bool:

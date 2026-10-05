@@ -230,6 +230,69 @@ def test_private_client_rejects_missing_or_invalid_address(client):
     assert device_auth.is_private_client(request) is False
 
 
+@pytest.mark.parametrize(
+    "address",
+    [
+        "10.0.0.0",
+        "10.255.255.255",
+        "172.16.0.0",
+        "172.31.255.255",
+        "192.168.0.0",
+        "192.168.255.255",
+        "127.0.0.0",
+        "127.255.255.255",
+        "fc00::",
+        "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "fe80::",
+        "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "::1",
+    ],
+)
+def test_private_client_accepts_only_supported_private_network_boundaries(address):
+    request = Request({"type": "http", "client": (address, 1234)})
+
+    assert device_auth.is_private_client(request) is True
+
+
+NON_ALLOWLISTED_ADDRESSES = [
+    "0.0.0.0",
+    "0.1.2.3",
+    "169.254.1.1",
+    "192.0.2.1",
+    "198.18.0.1",
+    "198.51.100.1",
+    "203.0.113.1",
+    "224.0.0.1",
+    "240.0.0.1",
+    "255.255.255.255",
+    "::",
+    "100::1",
+    "2001:db8::1",
+    "::ffff:192.168.1.20",
+    "::ffff:8.8.8.8",
+]
+
+
+@pytest.mark.parametrize("address", NON_ALLOWLISTED_ADDRESSES)
+def test_private_client_rejects_addresses_outside_supported_networks(address):
+    request = Request({"type": "http", "client": (address, 1234)})
+
+    assert device_auth.is_private_client(request) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address", NON_ALLOWLISTED_ADDRESSES)
+async def test_android_http_pairing_rejects_addresses_outside_supported_networks(
+    auth_env, address
+):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, address, client_type="android")
+
+    assert response.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_first_device_can_only_bootstrap_from_loopback(auth_env):
     local, remote = auth_env
