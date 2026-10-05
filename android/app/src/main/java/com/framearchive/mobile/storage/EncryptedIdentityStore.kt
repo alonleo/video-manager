@@ -42,9 +42,15 @@ class IdentityStoreUnavailable(
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
+internal class InvalidIdentityStoreKeyException(
+    message: String,
+    cause: Throwable? = null,
+) : GeneralSecurityException(message, cause)
+
 internal enum class IdentityReadFailure {
     CIPHERTEXT_CORRUPTED,
     KEY_PERMANENTLY_INVALIDATED,
+    KEY_POLICY_INVALID,
     UNAVAILABLE,
 }
 
@@ -52,13 +58,19 @@ internal fun classifyIdentityReadSecurityFailure(error: Throwable): IdentityRead
     if (error.hasCauseOfType<KeyPermanentlyInvalidatedException>()) {
         return IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED
     }
+    if (error.hasCauseOfType<InvalidIdentityStoreKeyException>()) {
+        return IdentityReadFailure.KEY_POLICY_INVALID
+    }
     if (error.hasCauseOfType<BadPaddingException>()) {
         return IdentityReadFailure.CIPHERTEXT_CORRUPTED
     }
     return IdentityReadFailure.UNAVAILABLE
 }
 
-internal fun shouldRetryInvalidatedKey(retryCount: Int): Boolean = retryCount == 0
+internal fun shouldRetryKeyRecovery(failure: IdentityReadFailure, retryCount: Int): Boolean =
+    retryCount == 0 &&
+        (failure == IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED ||
+            failure == IdentityReadFailure.KEY_POLICY_INVALID)
 
 internal data class IdentityKeyMetadata(
     val keySizeBits: Int,
@@ -191,11 +203,13 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         if (!store.containsAlias(KEY_ALIAS)) return null
         val key = store.getKey(KEY_ALIAS, null)
         if (key !is SecretKey || !key.algorithm.equals(KeyProperties.KEY_ALGORITHM_AES, ignoreCase = true)) {
-            throw KeyStoreException("Device identity alias is not an AES secret key")
+            throw InvalidIdentityStoreKeyException("Device identity alias is not an AES secret key")
         }
         val metadata = identityKeyMetadata(key)
         if (!isValidIdentityStoreKey(metadata)) {
-            throw KeyStoreException("Device identity key parameters do not match the required policy")
+            throw InvalidIdentityStoreKeyException(
+                "Device identity key parameters do not match the required policy",
+            )
         }
         return key
     }
@@ -205,14 +219,20 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         val keyInfo = SecretKeyFactory.getInstance(key.algorithm, ANDROID_KEY_STORE)
             .getKeySpec(key, KeyInfo::class.java) as? KeyInfo
             ?: throw KeyStoreException("Android Keystore did not provide key metadata")
-        return IdentityKeyMetadata(
+        val keyInfoMetadata = IdentityKeyMetadata(
             keySizeBits = keyInfo.keySize,
             purposes = keyInfo.purposes,
             blockModes = keyInfo.blockModes?.toSet().orEmpty(),
             encryptionPaddings = keyInfo.encryptionPaddings?.toSet().orEmpty(),
             userAuthenticationRequired = keyInfo.isUserAuthenticationRequired,
-            randomizedEncryptionRequired = rejectsCallerProvidedIv(key),
+            randomizedEncryptionRequired = true,
         )
+        if (!isValidIdentityStoreKey(keyInfoMetadata)) {
+            throw InvalidIdentityStoreKeyException(
+                "Device identity key metadata does not match the required policy",
+            )
+        }
+        return keyInfoMetadata.copy(randomizedEncryptionRequired = rejectsCallerProvidedIv(key))
     }
 
     @Throws(GeneralSecurityException::class)
@@ -265,23 +285,21 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
                     EncryptedPayload(providerIv, doFinal(plaintext))
                 }
             } catch (error: GeneralSecurityException) {
-                recoverInvalidatedKeyOrThrow(error, retryCount)
+                recoverInvalidKeyOrThrow(error, retryCount)
             } catch (error: IOException) {
-                recoverInvalidatedKeyOrThrow(error, retryCount)
+                recoverInvalidKeyOrThrow(error, retryCount)
             } catch (error: ProviderException) {
-                recoverInvalidatedKeyOrThrow(error, retryCount)
+                recoverInvalidKeyOrThrow(error, retryCount)
             } catch (error: IllegalArgumentException) {
-                recoverInvalidatedKeyOrThrow(error, retryCount)
+                recoverInvalidKeyOrThrow(error, retryCount)
             }
             retryCount += 1
         }
     }
 
-    private fun recoverInvalidatedKeyOrThrow(error: Throwable, retryCount: Int) {
-        if (
-            classifyIdentityReadSecurityFailure(error) != IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED ||
-            !shouldRetryInvalidatedKey(retryCount)
-        ) {
+    private fun recoverInvalidKeyOrThrow(error: Throwable, retryCount: Int) {
+        val failure = classifyIdentityReadSecurityFailure(error)
+        if (!shouldRetryKeyRecovery(failure, retryCount)) {
             throw IdentityStoreUnavailable("Unable to encrypt device identity", error)
         }
 
@@ -297,7 +315,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     }
 
     private fun keyRecoveryUnavailable(invalidation: Throwable, deleteError: Throwable): IdentityStoreUnavailable =
-        IdentityStoreUnavailable("Unable to replace invalidated device identity key", deleteError).also {
+        IdentityStoreUnavailable("Unable to replace invalid device identity key", deleteError).also {
             it.addSuppressed(invalidation)
         }
 
@@ -306,13 +324,15 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
             IdentityReadFailure.CIPHERTEXT_CORRUPTED ->
                 clearCorruptedAndThrow("Stored device identity authentication failed", error)
             IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED ->
-                clearInvalidatedKeyAndThrow(error)
+                clearInvalidKeyAndThrow("Stored device identity key was permanently invalidated", error)
+            IdentityReadFailure.KEY_POLICY_INVALID ->
+                clearInvalidKeyAndThrow("Stored device identity key has invalid parameters", error)
             IdentityReadFailure.UNAVAILABLE ->
                 throw IdentityStoreUnavailable("Encrypted device identity is temporarily unavailable", error)
         }
 
-    private fun clearInvalidatedKeyAndThrow(cause: Throwable): Nothing {
-        val error = IdentityStoreCorrupted("Stored device identity key was permanently invalidated", cause)
+    private fun clearInvalidKeyAndThrow(message: String, cause: Throwable): Nothing {
+        val error = IdentityStoreCorrupted(message, cause)
         try {
             deleteStorageKey()
         } catch (cleanupError: GeneralSecurityException) {
@@ -323,7 +343,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
             error.addSuppressed(cleanupError)
         }
         if (!preferences.edit().clear().commit()) {
-            error.addSuppressed(IllegalStateException("Unable to clear invalidated device identity"))
+            error.addSuppressed(IllegalStateException("Unable to clear identity for an invalid storage key"))
         }
         throw error
     }

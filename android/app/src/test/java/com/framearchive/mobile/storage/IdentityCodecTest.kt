@@ -7,6 +7,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.InvalidAlgorithmParameterException
+import java.security.GeneralSecurityException
+import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
 import java.security.ProviderException
 import java.security.UnrecoverableKeyException
@@ -220,6 +222,7 @@ class IdentityCodecTest {
             NoSuchAlgorithmException("wrapper", UnrecoverableKeyException()),
             NoSuchAlgorithmException(),
             InvalidAlgorithmParameterException(),
+            KeyStoreException(),
             ProviderException(),
         ).forEach { error ->
             assertEquals(IdentityReadFailure.UNAVAILABLE, classifyIdentityReadSecurityFailure(error))
@@ -227,10 +230,26 @@ class IdentityCodecTest {
     }
 
     @Test
-    fun `invalidated key recovery retries only once`() {
-        assertTrue(shouldRetryInvalidatedKey(retryCount = 0))
-        assertFalse(shouldRetryInvalidatedKey(retryCount = 1))
-        assertFalse(shouldRetryInvalidatedKey(retryCount = 2))
+    fun `read security failure classification recognizes invalid key policy through causes`() {
+        listOf(
+            InvalidIdentityStoreKeyException("invalid policy"),
+            GeneralSecurityException("wrapper", InvalidIdentityStoreKeyException("invalid policy")),
+        ).forEach { error ->
+            assertEquals(IdentityReadFailure.KEY_POLICY_INVALID, classifyIdentityReadSecurityFailure(error))
+        }
+    }
+
+    @Test
+    fun `recoverable key failures retry only once`() {
+        listOf(
+            IdentityReadFailure.KEY_PERMANENTLY_INVALIDATED,
+            IdentityReadFailure.KEY_POLICY_INVALID,
+        ).forEach { failure ->
+            assertTrue(shouldRetryKeyRecovery(failure, retryCount = 0))
+            assertFalse(shouldRetryKeyRecovery(failure, retryCount = 1))
+            assertFalse(shouldRetryKeyRecovery(failure, retryCount = 2))
+        }
+        assertFalse(shouldRetryKeyRecovery(IdentityReadFailure.UNAVAILABLE, retryCount = 0))
     }
 
     private fun assertRejected(json: String) {
