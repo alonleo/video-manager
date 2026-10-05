@@ -182,6 +182,7 @@ class MainViewModelTest {
         runCurrent()
 
         assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
+        assertTrue(viewModel.uiState.value.clearWebData)
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
     }
@@ -256,6 +257,27 @@ class MainViewModelTest {
         assertEquals(AppState.RecoverableError("网络连接失败，请重试", true), viewModel.uiState.value.appState)
         assertEquals(approved, fake.identity)
         assertTrue(viewModel.uiState.value.canResetIdentity)
+        assertFalse(viewModel.uiState.value.clearWebData)
+    }
+
+    @Test
+    fun rejectedExpiredAndCorruptedIdentitiesRequestPermanentWebDataCleanup() = runTest(dispatcher) {
+        val rejected = FakeCoordinator(pendingIdentity()).apply {
+            approvalResult = CompletableDeferred<DeviceIdentity>().also {
+                it.completeExceptionally(PairingRejected())
+            }
+            clearIdentityOnWaitFailure = true
+        }
+        val rejectedViewModel = MainViewModel(rejected, dispatcher) { NOW }
+        runCurrent()
+        assertTrue(rejectedViewModel.uiState.value.clearWebData)
+
+        val corrupted = FakeCoordinator(null).apply {
+            storedIdentityFailure = IdentityStoreCorrupted("corrupt")
+        }
+        val corruptedViewModel = MainViewModel(corrupted, dispatcher) { NOW }
+        runCurrent()
+        assertTrue(corruptedViewModel.uiState.value.clearWebData)
     }
 
     @Test

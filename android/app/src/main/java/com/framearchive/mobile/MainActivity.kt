@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -44,7 +45,6 @@ class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var browserBinding: ViewBrowserBinding? = null
     private var browserOpen: SessionOpen? = null
-    private var lastBrowserOrigin: String? = null
 
     private val webSessionBridge: WebSessionBridge by lazy {
         WebSessionBridge(
@@ -54,6 +54,8 @@ class MainActivity : AppCompatActivity() {
             onUnauthorized = { showBrowserAuthenticationProblem(R.string.session_expired) },
             onSessionError = { showBrowserAuthenticationProblem(R.string.web_session_failed) },
             onDownloadQueued = { toast(R.string.download_queued) },
+            onDownloadCompleted = { toast(R.string.download_completed) },
+            onDownloadFailed = { toast(R.string.download_failed) },
         )
     }
 
@@ -104,8 +106,11 @@ class MainActivity : AppCompatActivity() {
         val state = uiState.appState
         countdownJob?.cancel()
         countdownJob = null
+        if (uiState.clearWebData) {
+            webSessionBridge.clearAllWebData(browserBinding?.webView)
+        }
         if (state !is AppState.Browsing) {
-            disposeBrowser(clearSession = state == AppState.NeedsPairing)
+            disposeBrowser()
         }
         binding.content.removeAllViews()
         when (state) {
@@ -125,13 +130,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderBrowser(state: AppState.Browsing) {
-        disposeBrowser(clearSession = false)
+        disposeBrowser()
         val browser = ViewBrowserBinding.inflate(layoutInflater, binding.content, false)
         browser.serverOrigin.text = state.serverOrigin
         browser.reauthenticateButton.setOnClickListener { viewModel.reauthenticate() }
         binding.content.addView(browser.root)
         browserBinding = browser
-        lastBrowserOrigin = state.serverOrigin
         browserOpen = try {
             webSessionBridge.open(browser.webView, state.serverOrigin, state.cookieHeader)
         } catch (_: IllegalArgumentException) {
@@ -147,9 +151,12 @@ class MainActivity : AppCompatActivity() {
         browser.reauthenticateButton.visibility = View.VISIBLE
     }
 
-    private fun disposeBrowser(clearSession: Boolean) {
+    private fun disposeBrowser() {
         browserOpen?.cancel()
         browserOpen = null
+        browserBinding?.root?.let { root ->
+            (root.parent as? ViewGroup)?.removeView(root)
+        }
         browserBinding?.webView?.apply {
             stopLoading()
             clearHistory()
@@ -157,10 +164,6 @@ class MainActivity : AppCompatActivity() {
             destroy()
         }
         browserBinding = null
-        if (clearSession) {
-            lastBrowserOrigin?.let(webSessionBridge::clearSession)
-            lastBrowserOrigin = null
-        }
     }
 
     private fun renderPairing(errorMessage: String? = null) {
@@ -270,7 +273,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         countdownJob?.cancel()
-        disposeBrowser(clearSession = isFinishing)
+        disposeBrowser()
         super.onDestroy()
     }
 

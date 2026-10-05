@@ -42,6 +42,13 @@ internal object SessionCookiePolicy {
         return "$COOKIE_NAME=$value; Path=/; HttpOnly; SameSite=Lax$secure"
     }
 
+    fun isValidCookiePair(value: String): Boolean {
+        val equals = value.indexOf('=')
+        return equals > 0 && value.substring(0, equals) == COOKIE_NAME &&
+            value.substring(equals + 1).isNotEmpty() &&
+            value.substring(equals + 1).all(::isCookieOctet)
+    }
+
     private fun isCookieOctet(character: Char): Boolean = when (character.code) {
         0x21, in 0x23..0x2b, in 0x2d..0x3a, in 0x3c..0x5b, in 0x5d..0x7e -> true
         else -> false

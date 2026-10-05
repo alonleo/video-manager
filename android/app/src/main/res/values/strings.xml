@@ -24,7 +24,9 @@
     <string name="web_session_failed">无法打开网站，请检查网络或重新认证。</string>
     <string name="navigation_blocked">已阻止不安全的外部链接</string>
     <string name="external_browser_unavailable">没有可用于打开此链接的浏览器</string>
-    <string name="download_queued">下载已加入系统下载队列</string>
+    <string name="download_queued">下载已加入应用下载队列</string>
+    <string name="download_completed">下载完成，文件已保存到应用专用下载目录</string>
+    <string name="download_failed">下载失败或已阻止不安全的重定向</string>
     <plurals name="pairing_seconds_remaining">
         <item quantity="one">剩余 %d 秒</item>
         <item quantity="other">剩余 %d 秒</item>

@@ -32,6 +32,7 @@ data class PairingDraft(val pairingLink: String, val deviceName: String) {
 data class MainUiState(
     val appState: AppState,
     val canResetIdentity: Boolean = false,
+    val clearWebData: Boolean = false,
 ) {
     init {
         require(
@@ -39,6 +40,12 @@ data class MainUiState(
                 (appState is AppState.RecoverableError && appState.canRetry),
         ) {
             "Identity reset is only available from a recoverable error"
+        }
+        require(
+            !clearWebData || appState == AppState.NeedsPairing ||
+                (appState is AppState.RecoverableError && !appState.canRetry),
+        ) {
+            "Web data is only cleared after permanent identity loss"
         }
     }
 }
@@ -137,7 +144,7 @@ class MainViewModel(
             }
             try {
                 when {
-                    identity == null -> transitionTo(AppState.NeedsPairing)
+                    identity == null -> transitionTo(AppState.NeedsPairing, clearWebData = true)
                     identity.pending != null -> awaitAndAuthenticate(identity)
                     else -> authenticate(identity)
                 }
@@ -172,7 +179,7 @@ class MainViewModel(
             return
         }
         mutableApprovalDetails.value = null
-        transitionTo(AppState.NeedsPairing)
+        transitionTo(AppState.NeedsPairing, clearWebData = true)
     }
 
     fun remainingApprovalMillis(): Long =
@@ -190,13 +197,16 @@ class MainViewModel(
                 showIdentityStoreCorrupted()
                 return@launchOperation
             } catch (error: Throwable) {
-                transitionTo(AppState.RecoverableError("无法读取设备身份，请重新配对", false))
+                transitionTo(
+                    AppState.RecoverableError("无法读取设备身份，请重新配对", false),
+                    clearWebData = true,
+                )
                 return@launchOperation
             }
             when {
                 identity == null -> {
                     mutableApprovalDetails.value = null
-                    transitionTo(AppState.NeedsPairing)
+                    transitionTo(AppState.NeedsPairing, clearWebData = true)
                 }
                 identity.pending != null -> try {
                     awaitAndAuthenticate(identity)
@@ -257,6 +267,7 @@ class MainViewModel(
                         "配对申请已被电脑拒绝，请重新扫码",
                         false,
                     ),
+                    clearWebData = true,
                 )
             }
             is PairingExpired -> {
@@ -266,11 +277,12 @@ class MainViewModel(
                         "二维码已过期，请重新扫码",
                         false,
                     ),
+                    clearWebData = true,
                 )
             }
             is DeviceRevoked -> {
                 mutableApprovalDetails.value = null
-                transitionTo(AppState.NeedsPairing)
+                transitionTo(AppState.NeedsPairing, clearWebData = true)
             }
             is NetworkUnavailable -> {
                 val identityStillAvailable = try {
@@ -304,7 +316,7 @@ class MainViewModel(
                     )
                 } else {
                     mutableApprovalDetails.value = null
-                    transitionTo(AppState.NeedsPairing)
+                    transitionTo(AppState.NeedsPairing, clearWebData = true)
                 }
             }
         }
@@ -315,11 +327,18 @@ class MainViewModel(
     }
 
     private fun showIdentityStoreCorrupted() {
-        transitionTo(AppState.RecoverableError("设备身份已损坏，请重新配对", false))
+        transitionTo(
+            AppState.RecoverableError("设备身份已损坏，请重新配对", false),
+            clearWebData = true,
+        )
     }
 
-    private fun transitionTo(state: AppState, canResetIdentity: Boolean = false) {
-        mutableUiState.value = MainUiState(state, canResetIdentity)
+    private fun transitionTo(
+        state: AppState,
+        canResetIdentity: Boolean = false,
+        clearWebData: Boolean = false,
+    ) {
+        mutableUiState.value = MainUiState(state, canResetIdentity, clearWebData)
     }
 
     private fun closeResetCapability() {
