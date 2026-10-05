@@ -54,6 +54,16 @@ class DerSignatureConverterTest {
     }
 
     @Test
+    fun `rejects zero r`() {
+        assertInvalid(signature(byteArrayOf(0), byteArrayOf(1)))
+    }
+
+    @Test
+    fun `rejects zero s`() {
+        assertInvalid(signature(byteArrayOf(1), byteArrayOf(0)))
+    }
+
+    @Test
     fun `rejects invalid integer sizes and malformed 33 byte values`() {
         assertInvalid(signature(byteArrayOf(), byteArrayOf(1)))
         assertInvalid(signature(ByteArray(34) { 1 }, byteArrayOf(1)))

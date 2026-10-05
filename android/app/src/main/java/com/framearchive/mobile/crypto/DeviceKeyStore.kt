@@ -43,10 +43,13 @@ internal object PublicJwkEncoder {
 
 class DeviceKeyStore {
     /** Returns the existing public key for [alias] instead of replacing device identity. */
+    @Synchronized
     fun create(alias: String): PublicJwk {
         requireAlias(alias)
-        if (contains(alias)) {
-            return publicJwk(alias)
+        val store = keyStore()
+        val existingEntry = store.getEntry(alias, null)
+        if (existingEntry != null) {
+            return PublicJwkEncoder.encode(validateEntry(alias, existingEntry).publicKey)
         }
 
         val generator = KeyPairGenerator.getInstance(
@@ -61,24 +64,20 @@ class DeviceKeyStore {
             .setDigests(KeyProperties.DIGEST_SHA256)
             .build()
         generator.initialize(parameters)
-        val publicKey = generator.generateKeyPair().public as? ECPublicKey
-            ?: throw IllegalStateException("Generated key for alias '$alias' is not an EC public key")
-        return PublicJwkEncoder.encode(publicKey)
+        generator.generateKeyPair()
+
+        val generatedEntry = validatedEntry(keyStore(), alias)
+        return PublicJwkEncoder.encode(generatedEntry.publicKey)
     }
 
     fun publicJwk(alias: String): PublicJwk {
         requireAlias(alias)
-        val certificate = keyStore().getCertificate(alias)
-            ?: throw IllegalStateException("No Android Keystore key exists for alias '$alias'")
-        val publicKey = certificate.publicKey as? ECPublicKey
-            ?: throw IllegalStateException("Key for alias '$alias' is not an EC public key")
-        return PublicJwkEncoder.encode(publicKey)
+        return PublicJwkEncoder.encode(validatedEntry(keyStore(), alias).publicKey)
     }
 
     fun sign(alias: String, challenge: ByteArray): ByteArray {
         requireAlias(alias)
-        val privateKey = keyStore().getKey(alias, null) as? PrivateKey
-            ?: throw IllegalStateException("No Android Keystore private key exists for alias '$alias'")
+        val privateKey = validatedEntry(keyStore(), alias).privateKey
         return Signature.getInstance("SHA256withECDSA").run {
             initSign(privateKey)
             update(challenge)
@@ -103,6 +102,24 @@ class DeviceKeyStore {
         load(null)
     }
 
+    private fun validatedEntry(store: KeyStore, alias: String): ValidatedDeviceKey {
+        val entry = store.getEntry(alias, null)
+            ?: throw IllegalStateException("No Android Keystore key exists for alias '$alias'")
+        return validateEntry(alias, entry)
+    }
+
+    private fun validateEntry(alias: String, entry: KeyStore.Entry): ValidatedDeviceKey {
+        val privateKeyEntry = entry as? KeyStore.PrivateKeyEntry
+            ?: throw IllegalStateException("Android Keystore alias '$alias' is not a private key entry")
+        val privateKey = privateKeyEntry.privateKey
+        if (!privateKey.algorithm.equals(KeyProperties.KEY_ALGORITHM_EC, ignoreCase = true)) {
+            throw IllegalStateException("Private key for alias '$alias' is not an EC key")
+        }
+        val publicKey = privateKeyEntry.certificate.publicKey as? ECPublicKey
+            ?: throw IllegalStateException("Certificate for alias '$alias' does not contain an EC public key")
+        return ValidatedDeviceKey(privateKey, publicKey)
+    }
+
     private fun requireAlias(alias: String) {
         require(alias.isNotBlank()) { "Key alias must not be blank" }
     }
@@ -110,4 +127,9 @@ class DeviceKeyStore {
     private companion object {
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
     }
+
+    private data class ValidatedDeviceKey(
+        val privateKey: PrivateKey,
+        val publicKey: ECPublicKey,
+    )
 }

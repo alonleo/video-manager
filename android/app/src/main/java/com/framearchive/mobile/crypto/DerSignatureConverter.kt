@@ -1,6 +1,6 @@
 package com.framearchive.mobile.crypto
 
-object DerSignatureConverter {
+internal object DerSignatureConverter {
     private const val SEQUENCE_TAG = 0x30
     private const val INTEGER_TAG = 0x02
     private const val COORDINATE_SIZE = 32
@@ -67,6 +67,9 @@ object DerSignatureConverter {
                 value
             }
 
+            if (unsigned.isEmpty() || unsigned.all { it == 0.toByte() }) {
+                throw IllegalArgumentException("ECDSA $name integer must be greater than zero")
+            }
             if (unsigned.size > COORDINATE_SIZE) {
                 throw IllegalArgumentException("ECDSA $name integer exceeds 32 bytes")
             }
