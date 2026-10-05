@@ -230,12 +230,18 @@ internal fun parseSessionCookiePair(header: String): String? {
     return "frame_device_session=$value"
 }
 
-internal data class ApiResponse(val code: Int, val headers: Headers, val body: String) {
+internal data class ApiResponse(
+    val code: Int,
+    val headers: Headers,
+    val body: String?,
+    val bodyTooLarge: Boolean,
+) {
     fun requireCode(expected: Int, vararg secrets: String) {
         if (code != expected) throw DeviceAuthApiException(errorMessage(*secrets))
     }
 
     fun errorMessage(vararg secrets: String): String {
+        if (bodyTooLarge) return "Device authentication request failed"
         val detail = try {
             strictJsonObject().opt("detail") as? String
         } catch (_: DeviceAuthApiException) {
@@ -247,8 +253,10 @@ internal data class ApiResponse(val code: Int, val headers: Headers, val body: S
     }
 
     fun strictJsonObject(): JSONObject {
+        if (bodyTooLarge) throw DeviceAuthApiException(RESPONSE_TOO_LARGE)
+        val responseBody = body ?: throw DeviceAuthApiException("Device authentication response is invalid")
         try {
-            val tokener = JSONTokener(body)
+            val tokener = JSONTokener(responseBody)
             val value = tokener.nextValue() as? JSONObject
                 ?: throw DeviceAuthApiException("Device authentication response is invalid")
             if (tokener.nextClean() != 0.toChar()) {
@@ -278,16 +286,14 @@ internal suspend fun Call.awaitApiResponse(): ApiResponse = suspendCancellableCo
                 response.use {
                     if (!continuation.isActive) return
                     val result = try {
+                        val limitedBody = response.readLimitedBody(call)
                         ApiResponse(
                             code = response.code,
                             headers = response.headers.newBuilder().build(),
-                            body = response.readLimitedBody(call),
+                            body = limitedBody.body,
+                            bodyTooLarge = limitedBody.tooLarge,
                         )
                     } catch (error: IOException) {
-                        val token = continuation.tryResumeWithException(error) ?: return
-                        continuation.completeResume(token)
-                        return
-                    } catch (error: DeviceAuthApiException) {
                         val token = continuation.tryResumeWithException(error) ?: return
                         continuation.completeResume(token)
                         return
@@ -300,19 +306,21 @@ internal suspend fun Call.awaitApiResponse(): ApiResponse = suspendCancellableCo
     )
 }
 
-private fun Response.readLimitedBody(call: Call): String {
-    val responseBody = body ?: return ""
+private fun Response.readLimitedBody(call: Call): LimitedBody {
+    val responseBody = body ?: return LimitedBody("", false)
     if (responseBody.contentLength() > MAX_RESPONSE_BODY_BYTES) {
         call.cancel()
-        throw DeviceAuthApiException(RESPONSE_TOO_LARGE)
+        return LimitedBody(null, true)
     }
     val source = responseBody.source()
     if (source.request(MAX_RESPONSE_BODY_BYTES + 1) && source.buffer.size > MAX_RESPONSE_BODY_BYTES) {
         call.cancel()
-        throw DeviceAuthApiException(RESPONSE_TOO_LARGE)
+        return LimitedBody(null, true)
     }
-    return source.buffer.readString(StandardCharsets.UTF_8)
+    return LimitedBody(source.buffer.readString(StandardCharsets.UTF_8), false)
 }
+
+private data class LimitedBody(val body: String?, val tooLarge: Boolean)
 
 private fun Throwable.findCancellationException(): CancellationException? {
     val pending = ArrayDeque<Throwable>()

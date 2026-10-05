@@ -244,6 +244,18 @@ class DeviceAuthApiTest {
     }
 
     @Test
+    fun oversizedPair409StillMapsToPairingExpired() = runTest {
+        server.enqueue(MockResponse().setResponseCode(409).setBody("x".repeat(65_537)))
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        val error = assertSuspendThrows<PairingExpired> {
+            api.requestPairing("sensitive-token", "name", PublicJwk(x = "x", y = "y"))
+        }
+
+        assertEquals("Device authentication request failed", error.message)
+    }
+
+    @Test
     fun pairingStatusUsesFixedPathAndMapsAllKnownStatuses() = runTest {
         listOf("pending", "open", "claiming", "approved", "rejected", "expired").forEach {
             server.enqueue(MockResponse().setBody("""{"status":"$it"}"""))
@@ -281,6 +293,34 @@ class DeviceAuthApiTest {
 
         assertSuspendThrows<PairingExpired> { api.pairingStatus(1, "secret") }
         assertSuspendThrows<PairingRejected> { api.pairingStatus(1, "secret") }
+    }
+
+    @Test
+    fun oversizedPairingStatusErrorsKeepTypedMapping() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("x".repeat(65_537)))
+        server.enqueue(
+            MockResponse().setResponseCode(409)
+                .setChunkedBody("x".repeat(65_537), 1_024),
+        )
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        assertSuspendThrows<PairingExpired> { api.pairingStatus(1, "secret") }
+        assertSuspendThrows<PairingRejected> { api.pairingStatus(1, "secret") }
+    }
+
+    @Test
+    fun oversizedVerify401StillMapsToDeviceRevoked() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(401)
+                .setChunkedBody("x".repeat(65_537), 1_024),
+        )
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        val error = assertSuspendThrows<DeviceRevoked> {
+            api.verify(1, "sensitive-challenge", ByteArray(64))
+        }
+
+        assertEquals("Device authentication request failed", error.message)
     }
 
     @Test
