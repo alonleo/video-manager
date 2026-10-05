@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -74,6 +75,14 @@ def verify_signature(public_jwk: dict, challenge: str, signature: str) -> bool:
 def is_loopback(request: Request) -> bool:
     host = request.client.host if request.client else ""
     return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def is_private_client(request: Request) -> bool:
+    try:
+        address = ipaddress.ip_address(request.client.host if request.client else "")
+    except ValueError:
+        return False
+    return address.is_private or address.is_loopback or address.is_link_local
 
 
 def is_secure(request: Request) -> bool:

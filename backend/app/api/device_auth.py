@@ -6,6 +6,7 @@ import secrets
 import time
 from collections import defaultdict, deque
 from datetime import timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -22,6 +23,7 @@ from app.services.device_auth import (
     authenticated_device,
     create_device_session,
     is_loopback,
+    is_private_client,
     is_secure,
     lock_active_device_ids,
     random_token,
@@ -69,6 +71,7 @@ class VerifyRequest(ChallengeRequest):
 
 class PairRequest(DeviceRegistration):
     token: str = Field(min_length=32, max_length=128)
+    client_type: Literal["browser", "android"] = "browser"
 
 
 class PairStatusRequest(BaseModel):
@@ -235,7 +238,10 @@ async def request_pairing(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    if not is_secure(request) and not is_loopback(request):
+    http_pairing_allowed = is_loopback(request) or (
+        body.client_type == "android" and is_private_client(request)
+    )
+    if not is_secure(request) and not http_pairing_allowed:
         raise HTTPException(400, "设备配对必须通过 HTTPS 完成")
     name = clean_name(body.name)
     key = public_key(body.public_key)

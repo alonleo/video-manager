@@ -11,10 +11,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from starlette.requests import Request
 
 from app.db import get_session
 from app.main import app
 from app.models import Base
+from app.services import device_auth
 
 
 def b64url(value: bytes) -> str:
@@ -75,6 +77,157 @@ async def auth_env(tmp_path):
         await remote.aclose()
         app.dependency_overrides.pop(get_session, None)
         await engine.dispose()
+
+
+async def bootstrap_admin(local: httpx.AsyncClient) -> None:
+    _, public_jwk = device_key()
+    response = await local.post(
+        "/api/device-auth/bootstrap",
+        json={"name": "管理设备", "public_key": public_jwk},
+    )
+    assert response.status_code == 201
+
+
+async def request_pairing_token(local: httpx.AsyncClient) -> str:
+    response = await local.post("/api/trusted-devices/pairings")
+    assert response.status_code == 201
+    return response.json()["token"]
+
+
+async def pair_from_address(
+    local: httpx.AsyncClient,
+    address: str,
+    *,
+    scheme: str = "http",
+    client_type: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    token = await request_pairing_token(local)
+    _, public_jwk = device_key()
+    body = {"token": token, "name": f"设备 {address}", "public_key": public_jwk}
+    if client_type is not None:
+        body["client_type"] = client_type
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=(address, 1234)),
+        base_url=f"{scheme}://test",
+        headers=headers,
+    )
+    try:
+        return await client.post("/api/device-auth/pair", json=body)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_android_can_pair_over_http_from_private_address(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, "192.168.1.20", client_type="android")
+
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_browser_cannot_pair_over_http_from_private_address_by_default(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, "192.168.1.20")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_android_cannot_pair_over_http_from_public_address(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, "8.8.8.8", client_type="android")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_android_http_pairing_ignores_forwarded_public_address(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(
+        local,
+        "192.168.1.20",
+        client_type="android",
+        headers={"x-forwarded-for": "8.8.8.8"},
+    )
+
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_android_http_pairing_cannot_spoof_private_address_with_forwarded_header(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(
+        local,
+        "8.8.8.8",
+        client_type="android",
+        headers={"x-forwarded-for": "192.168.1.20"},
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address", ["fd00::20", "fe80::20", "::1"])
+async def test_android_can_pair_over_http_from_private_ipv6_addresses(auth_env, address):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, address, client_type="android")
+
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_browser_can_still_pair_over_http_from_loopback(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, "::1")
+
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_browser_can_pair_over_https_from_public_address(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(local, "8.8.8.8", scheme="https")
+
+    assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_pairing_rejects_unknown_client_type(auth_env):
+    local, _ = auth_env
+    await bootstrap_admin(local)
+
+    response = await pair_from_address(
+        local,
+        "192.168.1.20",
+        client_type="desktop",
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("client", [None, ("not-an-ip", 1234)])
+def test_private_client_rejects_missing_or_invalid_address(client):
+    request = Request({"type": "http", "client": client})
+
+    assert device_auth.is_private_client(request) is False
 
 
 @pytest.mark.asyncio
