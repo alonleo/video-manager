@@ -36,7 +36,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/item_spacing"
-            android:hint="@string/device_name_hint"
             android:imeOptions="actionNext"
             android:importantForAutofill="no"
             android:inputType="textCapSentences"
@@ -68,7 +67,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/item_spacing"
-            android:hint="@string/pairing_link_hint"
             android:importantForAutofill="no"
             android:inputType="textUri"
             android:maxLines="4" />

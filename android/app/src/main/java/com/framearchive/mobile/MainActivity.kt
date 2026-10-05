@@ -28,6 +28,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -65,12 +66,16 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.state.collectLatest(::render)
+                combine(viewModel.state, viewModel.canResetIdentity) { state, canResetIdentity ->
+                    state to canResetIdentity
+                }.collectLatest { (state, canResetIdentity) ->
+                    render(state, canResetIdentity)
+                }
             }
         }
     }
 
-    private fun render(state: AppState) {
+    private fun render(state: AppState, canResetIdentity: Boolean) {
         countdownJob?.cancel()
         countdownJob = null
         binding.content.removeAllViews()
@@ -81,7 +86,11 @@ class MainActivity : AppCompatActivity() {
             AppState.Authenticating -> renderProgress(getString(R.string.pairing_authenticating))
             is AppState.Browsing -> renderStatus(getString(R.string.browser_placeholder))
             is AppState.RecoverableError -> {
-                if (state.canRetry) renderRetryableError(state.message) else renderPairing(state.message)
+                if (state.canRetry) {
+                    renderRetryableError(state.message, canResetIdentity)
+                } else {
+                    renderPairing(state.message)
+                }
             }
         }
     }
@@ -141,13 +150,19 @@ class MainActivity : AppCompatActivity() {
         binding.content.addView(statusContainer().apply { addView(statusText(message)) })
     }
 
-    private fun renderRetryableError(message: String) {
+    private fun renderRetryableError(message: String, canResetIdentity: Boolean) {
         val container = statusContainer()
         container.addView(statusText(message))
         container.addView(Button(this).apply {
             setText(R.string.retry)
             setOnClickListener { viewModel.retry() }
         })
+        if (canResetIdentity) {
+            container.addView(Button(this).apply {
+                setText(R.string.pair_again)
+                setOnClickListener { viewModel.abandonIdentity() }
+            })
+        }
         binding.content.addView(container)
     }
 

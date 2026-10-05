@@ -113,7 +113,7 @@ class MainViewModelTest {
             viewModel.state.value,
         )
         assertNull(fake.identity)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -133,7 +133,7 @@ class MainViewModelTest {
             viewModel.state.value,
         )
         assertNull(fake.identity)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -150,12 +150,14 @@ class MainViewModelTest {
 
         assertEquals(AppState.RecoverableError("网络连接失败，请重试", true), viewModel.state.value)
         assertEquals(pending, fake.identity)
+        assertTrue(viewModel.canResetIdentity.value)
 
         fake.approvalResult = CompletableDeferred()
         viewModel.retry()
         runCurrent()
         assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.state.value)
         assertEquals(2, fake.waitCalls)
+        assertFalse(viewModel.canResetIdentity.value)
     }
 
     @Test
@@ -173,7 +175,7 @@ class MainViewModelTest {
 
         assertEquals(AppState.NeedsPairing, viewModel.state.value)
         assertNull(fake.identity)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -194,9 +196,10 @@ class MainViewModelTest {
 
         assertEquals(1, fake.submitCalls)
         assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.state.value)
+        assertEquals("", viewModel.pairingDraft.value.pairingLink)
         viewModel.cancelPairing()
         runCurrent()
-        assertTrue(fake.cancelled)
+        assertEquals(1, fake.cancelCalls)
         assertEquals(AppState.NeedsPairing, viewModel.state.value)
     }
 
@@ -236,7 +239,7 @@ class MainViewModelTest {
 
         assertTrue(fake.waitCancelled)
         assertEquals(pending, fake.identity)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -252,7 +255,11 @@ class MainViewModelTest {
             viewModel.state.value,
         )
         assertEquals(0, fake.submitCalls)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
+        assertFalse(viewModel.canResetIdentity.value)
+
+        viewModel.abandonIdentity()
+        assertEquals(0, fake.cancelCalls)
 
         fake.storedIdentityFailure = null
         viewModel.retry()
@@ -260,7 +267,7 @@ class MainViewModelTest {
         assertEquals(AppState.NeedsPairing, viewModel.state.value)
         assertEquals(2, fake.readCalls)
         assertEquals(0, fake.submitCalls)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -276,7 +283,7 @@ class MainViewModelTest {
             viewModel.state.value,
         )
         assertEquals(0, fake.submitCalls)
-        assertFalse(fake.cancelled)
+        assertEquals(0, fake.cancelCalls)
     }
 
     @Test
@@ -328,6 +335,66 @@ class MainViewModelTest {
         assertEquals(scanned, fake.lastSubmittedRawLink)
     }
 
+    @Test
+    fun unavailableStoreDuringApprovalDoesNotFallThroughToMissingIdentity() = runTest(dispatcher) {
+        val pending = pendingIdentity()
+        val fake = FakeCoordinator(pending).apply {
+            approvalResult = CompletableDeferred<DeviceIdentity>().also {
+                it.completeExceptionally(IdentityStoreUnavailable("keystore busy"))
+            }
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        assertEquals(
+            AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
+            viewModel.state.value,
+        )
+        assertEquals(1, fake.readCalls)
+        assertEquals(pending, fake.identity)
+        assertFalse(viewModel.canResetIdentity.value)
+    }
+
+    @Test
+    fun unavailableStoreDuringAuthenticationDoesNotFallThroughToMissingIdentity() = runTest(dispatcher) {
+        val approved = pendingIdentity().copy(pending = null)
+        val fake = FakeCoordinator(approved).apply {
+            authenticationResult = CompletableDeferred<AuthSession>().also {
+                it.completeExceptionally(IdentityStoreUnavailable("keystore busy"))
+            }
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        assertEquals(
+            AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
+            viewModel.state.value,
+        )
+        assertEquals(1, fake.readCalls)
+        assertEquals(approved, fake.identity)
+        assertFalse(viewModel.canResetIdentity.value)
+    }
+
+    @Test
+    fun networkFailureCanAbandonPendingIdentityAndReturnToPairing() = runTest(dispatcher) {
+        val fake = FakeCoordinator(pendingIdentity()).apply {
+            approvalResult = CompletableDeferred<DeviceIdentity>().also {
+                it.completeExceptionally(NetworkUnavailable(IOException("offline")))
+            }
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+        assertTrue(viewModel.canResetIdentity.value)
+
+        viewModel.abandonIdentity()
+        runCurrent()
+
+        assertEquals(1, fake.cancelCalls)
+        assertNull(fake.identity)
+        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertFalse(viewModel.canResetIdentity.value)
+    }
+
     private class FakeCoordinator(initialIdentity: DeviceIdentity?) : PairingCoordinator {
         var identity = initialIdentity
         var submitResult: DeviceIdentity? = null
@@ -336,7 +403,7 @@ class MainViewModelTest {
         var waitCalls = 0
         var authenticateCalls = 0
         var submitCalls = 0
-        var cancelled = false
+        var cancelCalls = 0
         var waitCancelled = false
         var clearIdentityOnWaitFailure = false
         var clearIdentityOnAuthFailure = false
@@ -387,7 +454,7 @@ class MainViewModelTest {
             if (identity.pending != null) awaitApproval(identity) else authenticate(identity)
 
         override fun cancel() {
-            cancelled = true
+            cancelCalls += 1
             identity = null
         }
     }
