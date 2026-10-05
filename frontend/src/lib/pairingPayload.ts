@@ -33,17 +33,6 @@ function isPrivateHost(hostname: string): boolean {
     : isPrivateIpv4(hostname);
 }
 
-function explicitPort(value: string): string | undefined {
-  const authority = value
-    .trim()
-    .match(/^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/i)?.[1];
-  if (!authority) {
-    return undefined;
-  }
-
-  return authority.match(/^\[[^\]]+\]:(\d+)$/)?.[1] ?? authority.match(/:(\d+)$/)?.[1];
-}
-
 export function normalizePairingOrigin(value: string, mode: PairingMode): string {
   let url: URL;
   try {
@@ -74,10 +63,6 @@ export function normalizePairingOrigin(value: string, mode: PairingMode): string
     throw new Error("Android HTTP 配对只允许私有局域网地址");
   }
 
-  const port = explicitPort(value);
-  if (port && !url.port) {
-    return `${url.origin}:${port}`;
-  }
   return url.origin;
 }
 

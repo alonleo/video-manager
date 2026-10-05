@@ -105,12 +105,15 @@ describe("normalizePairingOrigin", () => {
     );
   });
 
-  it("preserves an explicitly supplied port while standardizing the host", () => {
+  it("removes default ports while preserving explicit non-default ports", () => {
     expect(
       normalizePairingOrigin("https://VIDEO.Example.com:8443/", "browser"),
     ).toBe("https://video.example.com:8443");
     expect(normalizePairingOrigin("http://127.0.0.1:80/", "android")).toBe(
-      "http://127.0.0.1:80",
+      "http://127.0.0.1",
+    );
+    expect(normalizePairingOrigin("https://example.com:443/", "browser")).toBe(
+      "https://example.com",
     );
   });
 
