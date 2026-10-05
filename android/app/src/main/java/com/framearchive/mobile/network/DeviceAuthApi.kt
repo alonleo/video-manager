@@ -20,6 +20,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
 import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -29,7 +30,11 @@ data class PairClaim(
     val deviceId: Long,
     val claimSecret: String,
     val verificationCode: String,
-)
+) {
+    override fun toString(): String =
+        "PairClaim(pairingId=$pairingId, deviceId=$deviceId, " +
+            "claimSecret=<redacted>, verificationCode=$verificationCode)"
+}
 
 sealed interface PairingStatus {
     data object Pending : PairingStatus
@@ -38,7 +43,9 @@ sealed interface PairingStatus {
     data object Expired : PairingStatus
 }
 
-data class AuthSession(val setCookieHeader: String)
+data class AuthSession(val setCookieHeader: String) {
+    override fun toString(): String = "AuthSession(setCookieHeader=<redacted>)"
+}
 
 open class DeviceAuthApiException(message: String, cause: Throwable? = null) : Exception(message, cause)
 class PairingExpired(message: String = "Pairing request expired") : DeviceAuthApiException(message)
@@ -63,8 +70,11 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(false)
         .followSslRedirects(false)
+        .retryOnConnectionFailure(false)
         .cookieJar(CookieJar.NO_COOKIES)
         .build()
+    @Volatile
+    private var sessionCookiePair: String? = null
 
     override suspend fun requestPairing(token: String, name: String, jwk: PublicJwk): PairClaim {
         require(token.isNotBlank()) { "Pairing token must not be blank" }
@@ -144,12 +154,19 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
         if (matching.size != 1) {
             throw DeviceAuthApiException("Authentication response contains an invalid session cookie")
         }
-        return AuthSession(matching.single())
+        val header = matching.single()
+        val cookiePair = parseSessionCookiePair(header)
+            ?: throw DeviceAuthApiException("Authentication response contains an invalid session cookie")
+        sessionCookiePair = cookiePair
+        return AuthSession(header)
     }
 
     override suspend fun isAuthenticated(): Boolean {
+        val request = Request.Builder().url(url("/api/device-auth/status")).get().apply {
+            sessionCookiePair?.let { header("Cookie", it) }
+        }.build()
         val response = execute(
-            Request.Builder().url(url("/api/device-auth/status")).get().build(),
+            request,
         )
         response.requireCode(200)
         return response.strictJsonObject().strictBoolean("authenticated")
@@ -204,6 +221,15 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
     }
 }
 
+internal fun parseSessionCookiePair(header: String): String? {
+    val pair = header.substringBefore(';').trim()
+    val equals = pair.indexOf('=')
+    if (equals <= 0 || pair.substring(0, equals).trim() != "frame_device_session") return null
+    val value = pair.substring(equals + 1)
+    if (value.isEmpty() || value.any { it.isISOControl() || it == ';' }) return null
+    return "frame_device_session=$value"
+}
+
 internal data class ApiResponse(val code: Int, val headers: Headers, val body: String) {
     fun requireCode(expected: Int, vararg secrets: String) {
         if (code != expected) throw DeviceAuthApiException(errorMessage(*secrets))
@@ -255,9 +281,13 @@ internal suspend fun Call.awaitApiResponse(): ApiResponse = suspendCancellableCo
                         ApiResponse(
                             code = response.code,
                             headers = response.headers.newBuilder().build(),
-                            body = response.body?.string().orEmpty(),
+                            body = response.readLimitedBody(call),
                         )
                     } catch (error: IOException) {
+                        val token = continuation.tryResumeWithException(error) ?: return
+                        continuation.completeResume(token)
+                        return
+                    } catch (error: DeviceAuthApiException) {
                         val token = continuation.tryResumeWithException(error) ?: return
                         continuation.completeResume(token)
                         return
@@ -268,6 +298,20 @@ internal suspend fun Call.awaitApiResponse(): ApiResponse = suspendCancellableCo
             }
         },
     )
+}
+
+private fun Response.readLimitedBody(call: Call): String {
+    val responseBody = body ?: return ""
+    if (responseBody.contentLength() > MAX_RESPONSE_BODY_BYTES) {
+        call.cancel()
+        throw DeviceAuthApiException(RESPONSE_TOO_LARGE)
+    }
+    val source = responseBody.source()
+    if (source.request(MAX_RESPONSE_BODY_BYTES + 1) && source.buffer.size > MAX_RESPONSE_BODY_BYTES) {
+        call.cancel()
+        throw DeviceAuthApiException(RESPONSE_TOO_LARGE)
+    }
+    return source.buffer.readString(StandardCharsets.UTF_8)
 }
 
 private fun Throwable.findCancellationException(): CancellationException? {
@@ -317,3 +361,5 @@ private fun String.requireBase64Url(): String {
 }
 
 private val BASE64URL_CHARACTERS = ('A'..'Z') + ('a'..'z') + ('0'..'9') + setOf('-', '_')
+private const val MAX_RESPONSE_BODY_BYTES = 65_536L
+private const val RESPONSE_TOO_LARGE = "Device authentication response exceeds 64 KiB"

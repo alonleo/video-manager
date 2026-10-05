@@ -46,6 +46,9 @@ internal fun interface DeviceAuthApiFactory {
     fun create(serverOrigin: String): DeviceAuthService
 }
 
+class StaleIdentityOperation(message: String = "Device identity changed while the operation was running") :
+    IllegalStateException(message)
+
 class PairingRepository internal constructor(
     private val identityStore: IdentityStore,
     private val keyOps: DeviceKeyOperations,
@@ -63,7 +66,9 @@ class PairingRepository internal constructor(
         aliasFactory = { "framearchive-device-auth-v1-${UUID.randomUUID()}" },
     )
 
-    override fun storedIdentity(): DeviceIdentity? = identityStore.read()
+    override fun storedIdentity(): DeviceIdentity? = synchronized(IDENTITY_STATE_LOCK) {
+        identityStore.read()
+    }
 
     override suspend fun submit(link: PairingLink, name: String): DeviceIdentity {
         require(name.isNotBlank()) { "Device name must not be blank" }
@@ -85,7 +90,12 @@ class PairingRepository internal constructor(
                     expiresAtEpochMillis = nowEpochMillis() + LOCAL_PAIRING_LIFETIME_MILLIS,
                 ),
             )
-            identityStore.save(identity)
+            synchronized(IDENTITY_STATE_LOCK) {
+                if (identityStore.read() != null) {
+                    throw StaleIdentityOperation("A device identity is already stored")
+                }
+                identityStore.save(identity)
+            }
             persisted = true
             return identity
         } catch (error: Throwable) {
@@ -95,39 +105,40 @@ class PairingRepository internal constructor(
     }
 
     override suspend fun awaitApproval(identity: DeviceIdentity): AuthSession {
-        val pending = identity.pending
+        identity.pending
             ?: throw IllegalArgumentException("Device identity is not awaiting approval")
         val api = apiFactory.create(identity.serverOrigin)
         while (true) {
+            val current = currentPending(identity)
+            val pending = current.pending!!
             if (nowEpochMillis() >= pending.expiresAtEpochMillis) {
                 val expired = PairingExpired()
-                clearIdentity(identity, expired)
+                clearPendingOrThrowStale(identity, expired)
                 throw expired
             }
             val status = try {
                 api.pairingStatus(pending.pairingId, pending.claimSecret)
             } catch (error: PairingExpired) {
-                clearIdentity(identity, error)
+                clearPendingOrThrowStale(identity, error)
                 throw error
             } catch (error: PairingRejected) {
-                clearIdentity(identity, error)
+                clearPendingOrThrowStale(identity, error)
                 throw error
             }
             when (status) {
                 PairingStatus.Pending -> pollDelay(POLL_INTERVAL_MILLIS)
                 PairingStatus.Approved -> {
-                    val approved = identity.copy(pending = null)
-                    identityStore.save(approved)
+                    val approved = approvePendingOrThrowStale(identity)
                     return authenticate(approved)
                 }
                 PairingStatus.Rejected -> {
                     val rejected = PairingRejected()
-                    clearIdentity(identity, rejected)
+                    clearPendingOrThrowStale(identity, rejected)
                     throw rejected
                 }
                 PairingStatus.Expired -> {
                     val expired = PairingExpired()
-                    clearIdentity(identity, expired)
+                    clearPendingOrThrowStale(identity, expired)
                     throw expired
                 }
             }
@@ -135,31 +146,36 @@ class PairingRepository internal constructor(
     }
 
     override suspend fun authenticate(identity: DeviceIdentity): AuthSession {
-        if (!keyOps.contains(identity.keyAlias)) {
+        val expected = currentApproved(identity)
+        if (!keyOps.contains(expected.keyAlias)) {
             val missing = IllegalStateException("Device authentication key is unavailable")
-            clearIdentity(identity, missing)
+            clearApprovedOrThrowStale(expected, missing)
             throw missing
         }
-        val api = apiFactory.create(identity.serverOrigin)
+        val api = apiFactory.create(expected.serverOrigin)
         try {
-            val challenge = api.challenge(identity.deviceId)
+            val challenge = api.challenge(expected.deviceId)
             val challengeBytes = decodeChallenge(challenge)
             val signature = try {
-                keyOps.sign(identity.keyAlias, challengeBytes)
+                keyOps.sign(expected.keyAlias, challengeBytes)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                clearIdentity(identity, error)
+                clearApprovedOrThrowStale(expected, error)
                 throw error
             }
             if (signature.size != P1363_SIGNATURE_BYTES) {
                 val invalid = IllegalArgumentException("Device key returned an invalid P1363 signature")
-                clearIdentity(identity, invalid)
+                clearApprovedOrThrowStale(expected, invalid)
                 throw invalid
             }
-            return api.verify(identity.deviceId, challenge, signature)
+            val session = api.verify(expected.deviceId, challenge, signature)
+            synchronized(IDENTITY_STATE_LOCK) {
+                if (!matchesApproved(identityStore.read(), expected)) throw StaleIdentityOperation()
+            }
+            return session
         } catch (error: DeviceRevoked) {
-            clearIdentity(identity, error)
+            clearApprovedOrThrowStale(expected, error)
             throw error
         }
     }
@@ -168,19 +184,21 @@ class PairingRepository internal constructor(
         if (identity.pending != null) awaitApproval(identity) else authenticate(identity)
 
     override fun cancel() {
-        val identity = identityStore.read() ?: return
-        var failure: Throwable? = null
-        try {
-            identityStore.clear()
-        } catch (cleanup: Throwable) {
-            failure = cleanup
+        synchronized(IDENTITY_STATE_LOCK) {
+            val identity = identityStore.read() ?: return
+            var failure: Throwable? = null
+            try {
+                identityStore.clear()
+            } catch (cleanup: Throwable) {
+                failure = cleanup
+            }
+            try {
+                keyOps.delete(identity.keyAlias)
+            } catch (cleanup: Throwable) {
+                failure?.addSuppressed(cleanup) ?: run { failure = cleanup }
+            }
+            failure?.let { throw it }
         }
-        try {
-            keyOps.delete(identity.keyAlias)
-        } catch (cleanup: Throwable) {
-            failure?.addSuppressed(cleanup) ?: run { failure = cleanup }
-        }
-        failure?.let { throw it }
     }
 
     private fun createKey(): CreatedKey = synchronized(ALIAS_CREATION_LOCK) {
@@ -207,18 +225,64 @@ class PairingRepository internal constructor(
         }
     }
 
-    private fun clearIdentity(identity: DeviceIdentity, original: Throwable) {
+    private fun currentPending(expected: DeviceIdentity): DeviceIdentity = synchronized(IDENTITY_STATE_LOCK) {
+        identityStore.read()?.takeIf { matchesPending(it, expected) } ?: throw StaleIdentityOperation()
+    }
+
+    private fun currentApproved(expected: DeviceIdentity): DeviceIdentity = synchronized(IDENTITY_STATE_LOCK) {
+        identityStore.read()?.takeIf { matchesApproved(it, expected) } ?: throw StaleIdentityOperation()
+    }
+
+    private fun approvePendingOrThrowStale(expected: DeviceIdentity): DeviceIdentity =
+        synchronized(IDENTITY_STATE_LOCK) {
+            val current = identityStore.read()?.takeIf { matchesPending(it, expected) }
+                ?: throw StaleIdentityOperation()
+            val approved = current.copy(pending = null)
+            identityStore.save(approved)
+            approved
+        }
+
+    private fun clearPendingOrThrowStale(expected: DeviceIdentity, original: Throwable) {
+        synchronized(IDENTITY_STATE_LOCK) {
+            val current = identityStore.read()?.takeIf { matchesPending(it, expected) }
+                ?: throw StaleIdentityOperation()
+            clearLocked(current, original)
+        }
+    }
+
+    private fun clearApprovedOrThrowStale(expected: DeviceIdentity, original: Throwable) {
+        synchronized(IDENTITY_STATE_LOCK) {
+            val current = identityStore.read()?.takeIf { matchesApproved(it, expected) }
+                ?: throw StaleIdentityOperation()
+            clearLocked(current, original)
+        }
+    }
+
+    private fun clearLocked(current: DeviceIdentity, original: Throwable) {
         try {
             identityStore.clear()
         } catch (cleanup: Throwable) {
             original.addSuppressed(cleanup)
         }
         try {
-            keyOps.delete(identity.keyAlias)
+            keyOps.delete(current.keyAlias)
         } catch (cleanup: Throwable) {
             original.addSuppressed(cleanup)
         }
     }
+
+    private fun matchesPending(current: DeviceIdentity?, expected: DeviceIdentity): Boolean =
+        matchesIdentity(current, expected) &&
+            current?.pending?.pairingId == expected.pending?.pairingId &&
+            expected.pending != null
+
+    private fun matchesApproved(current: DeviceIdentity?, expected: DeviceIdentity): Boolean =
+        matchesIdentity(current, expected) && current?.pending == null && expected.pending == null
+
+    private fun matchesIdentity(current: DeviceIdentity?, expected: DeviceIdentity): Boolean =
+        current?.serverOrigin == expected.serverOrigin &&
+            current.deviceId == expected.deviceId &&
+            current.keyAlias == expected.keyAlias
 
     private fun decodeChallenge(challenge: String): ByteArray {
         if (challenge.isEmpty() || challenge.any { it !in BASE64URL_CHARACTERS }) {
@@ -242,6 +306,7 @@ class PairingRepository internal constructor(
         const val P1363_SIGNATURE_BYTES = 64
         val BASE64URL_CHARACTERS = ('A'..'Z') + ('a'..'z') + ('0'..'9') + setOf('-', '_')
         val ALIAS_CREATION_LOCK = Any()
+        val IDENTITY_STATE_LOCK = Any()
     }
 
     private data class CreatedKey(val alias: String, val publicJwk: PublicJwk)

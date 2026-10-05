@@ -20,6 +20,7 @@ import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.json.JSONObject
 import org.junit.After
@@ -62,7 +63,7 @@ class DeviceAuthApiTest {
         val claim = api.requestPairing("pair-token", "Living room", PublicJwk(x = "x-value", y = "y-value"))
 
         assertEquals(PairClaim(11, 22, "secret", "ABCD"), claim)
-        val request = server.takeRequest()
+        val request = takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/api/device-auth/pair", request.path)
         val body = JSONObject(request.body.readUtf8())
@@ -76,6 +77,19 @@ class DeviceAuthApiTest {
         assertEquals("P-256", jwk.getString("crv"))
         assertEquals("x-value", jwk.getString("x"))
         assertEquals("y-value", jwk.getString("y"))
+    }
+
+    @Test
+    fun secretDtosRedactTheirStringRepresentations() {
+        val claimSecret = "claim-secret-must-never-appear"
+        val cookieValue = "cookie-value-must-never-appear"
+
+        assertFalse(PairClaim(1, 2, claimSecret, "CODE").toString().contains(claimSecret))
+        assertFalse(
+            AuthSession("frame_device_session=$cookieValue; Path=/; HttpOnly")
+                .toString()
+                .contains(cookieValue),
+        )
     }
 
     @Test
@@ -95,7 +109,7 @@ class DeviceAuthApiTest {
             "frame_device_session=session-value; Path=/; HttpOnly; SameSite=Lax",
             session.setCookieHeader,
         )
-        val request = server.takeRequest()
+        val request = takeRequest()
         assertEquals("/api/device-auth/verify", request.path)
         val body = JSONObject(request.body.readUtf8())
         assertEquals("challenge-text", body.getString("challenge"))
@@ -139,6 +153,43 @@ class DeviceAuthApiTest {
         assertSuspendThrows<DeviceAuthApiException> {
             api.verify(1, "challenge", ByteArray(64))
         }
+    }
+
+    @Test
+    fun verifyRejectsEmptyTargetCookieValue() = runTest {
+        server.enqueue(
+            MockResponse().setBody("{}")
+                .addHeader("Set-Cookie", "frame_device_session=; Path=/; HttpOnly"),
+        )
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        assertSuspendThrows<DeviceAuthApiException> {
+            api.verify(1, "challenge", ByteArray(64))
+        }
+    }
+
+    @Test
+    fun sessionCookieParserRejectsControlCharacters() {
+        assertNull(parseSessionCookiePair("frame_device_session=bad\u0001value; Path=/"))
+    }
+
+    @Test
+    fun verifySessionCookieIsSentOnlyToLaterStatusRequest() = runTest {
+        server.enqueue(
+            MockResponse().setBody("{}")
+                .addHeader("Set-Cookie", "unrelated=ignored; Path=/")
+                .addHeader("Set-Cookie", "frame_device_session=session-value; Path=/; HttpOnly"),
+        )
+        server.enqueue(MockResponse().setBody("""{"authenticated":true}"""))
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        api.verify(1, "challenge", ByteArray(64))
+        assertTrue(api.isAuthenticated())
+
+        val verifyRequest = takeRequest()
+        val statusRequest = takeRequest()
+        assertNull(verifyRequest.getHeader("Cookie"))
+        assertEquals("frame_device_session=session-value", statusRequest.getHeader("Cookie"))
     }
 
     @Test
@@ -206,7 +257,7 @@ class DeviceAuthApiTest {
         assertEquals(PairingStatus.Rejected, api.pairingStatus(9, "secret"))
         assertEquals(PairingStatus.Expired, api.pairingStatus(9, "secret"))
         repeat(6) {
-            val request = server.takeRequest()
+            val request = takeRequest()
             assertEquals("/api/device-auth/pair-status", request.path)
             val body = JSONObject(request.body.readUtf8())
             assertEquals(9L, body.getLong("pairing_id"))
@@ -238,7 +289,7 @@ class DeviceAuthApiTest {
         val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
 
         assertEquals("AQID", api.challenge(52))
-        val request = server.takeRequest()
+        val request = takeRequest()
         assertEquals("/api/device-auth/challenge", request.path)
         assertEquals(52L, JSONObject(request.body.readUtf8()).getLong("device_id"))
     }
@@ -258,10 +309,31 @@ class DeviceAuthApiTest {
         val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
 
         assertTrue(api.isAuthenticated())
-        val request = server.takeRequest()
+        val request = takeRequest()
         assertEquals("GET", request.method)
         assertEquals("/api/device-auth/status", request.path)
+        assertNull(request.getHeader("Cookie"))
         assertSuspendThrows<DeviceAuthApiException> { api.isAuthenticated() }
+    }
+
+    @Test
+    fun contentLengthResponseOver64KiBIsRejectedBeforeParsing() = runTest {
+        server.enqueue(MockResponse().setBody("x".repeat(65_537)))
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        val error = assertSuspendThrows<DeviceAuthApiException> { api.isAuthenticated() }
+
+        assertEquals("Device authentication response exceeds 64 KiB", error.message)
+    }
+
+    @Test
+    fun chunkedResponseOver64KiBIsRejectedWhileStreaming() = runTest {
+        server.enqueue(MockResponse().setChunkedBody("x".repeat(65_537), 1_024))
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        val error = assertSuspendThrows<DeviceAuthApiException> { api.isAuthenticated() }
+
+        assertEquals("Device authentication response exceeds 64 KiB", error.message)
     }
 
     @Test
@@ -404,6 +476,52 @@ class DeviceAuthApiTest {
     }
 
     @Test
+    fun staleRejectedPairingDoesNotClearReplacementIdentityOrKeys() = runTest {
+        val fixture = repositoryFixture(PairingStatus.Rejected)
+        val stale = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        val replacement = replacementIdentity()
+        fixture.keys.aliases += replacement.keyAlias
+        fixture.store.save(replacement)
+
+        assertSuspendThrows<IllegalStateException> { fixture.repository.awaitApproval(stale) }
+
+        assertEquals(replacement, fixture.store.value)
+        assertTrue(stale.keyAlias in fixture.keys.aliases)
+        assertTrue(replacement.keyAlias in fixture.keys.aliases)
+        assertTrue(fixture.keys.deleted.isEmpty())
+    }
+
+    @Test
+    fun staleExpiredPairingDoesNotClearReplacementIdentityOrKeys() = runTest {
+        val fixture = repositoryFixture(PairingStatus.Expired)
+        val stale = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        val replacement = replacementIdentity()
+        fixture.keys.aliases += replacement.keyAlias
+        fixture.store.save(replacement)
+
+        assertSuspendThrows<IllegalStateException> { fixture.repository.awaitApproval(stale) }
+
+        assertEquals(replacement, fixture.store.value)
+        assertTrue(stale.keyAlias in fixture.keys.aliases)
+        assertTrue(replacement.keyAlias in fixture.keys.aliases)
+        assertTrue(fixture.keys.deleted.isEmpty())
+    }
+
+    @Test
+    fun staleApprovedPairingDoesNotOverwriteReplacementIdentity() = runTest {
+        val fixture = repositoryFixture(PairingStatus.Approved)
+        val stale = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        val replacement = replacementIdentity()
+        fixture.keys.aliases += replacement.keyAlias
+        fixture.store.save(replacement)
+
+        assertSuspendThrows<IllegalStateException> { fixture.repository.awaitApproval(stale) }
+
+        assertEquals(replacement, fixture.store.value)
+        assertTrue(fixture.keys.deleted.isEmpty())
+    }
+
+    @Test
     fun serverExpiredErrorClearsIdentityAndKey() = runTest {
         val fixture = repositoryFixture()
         fixture.api.statusError = PairingExpired("gone")
@@ -511,20 +629,85 @@ class DeviceAuthApiTest {
                 firstRepository.submit(PairingLink("https://example.com", "token-1"), "First")
             }
             assertTrue(keys.firstCreateEntered.await(2, TimeUnit.SECONDS))
+            val secondStarted = CountDownLatch(1)
             val second = async(Dispatchers.Default) {
+                secondStarted.countDown()
                 secondRepository.submit(PairingLink("https://example.com", "token-2"), "Second")
             }
-            delay(150)
+            assertTrue(secondStarted.await(2, TimeUnit.SECONDS))
+            val secondReachedContains = keys.secondContainsEntered.await(250, TimeUnit.MILLISECONDS)
             val containsCallsWhileFirstCreateBlocked = keys.containsCalls.get()
             keys.releaseFirstCreate.countDown()
 
             assertEquals("race-key", withTimeout(2_000) { first.await() }.keyAlias)
             assertSuspendThrows<DeviceAuthApiException> { withTimeout(2_000) { second.await() } }
+            assertFalse(secondReachedContains)
             assertEquals(1, containsCallsWhileFirstCreateBlocked)
         }
         assertTrue("race-key" in keys.aliases)
         assertFalse("race-key" in keys.deleted)
         assertEquals(listOf("second-key"), keys.deleted)
+    }
+
+    @Test
+    fun concurrentSubmitsPersistOnlyOneIdentityAndCleanLosingKey() = runBlocking {
+        val store = BlockingFirstSaveIdentityStore()
+        val keys = FakeKeys(ByteArray(64))
+        val firstApi = FakeApi().apply { claim = PairClaim(1, 1, "first-secret", "FIRST") }
+        val secondApi = FakeApi().apply { claim = PairClaim(2, 2, "second-secret", "SECOND") }
+        val firstRepository = repository(store, keys, firstApi, "first-key")
+        val secondRepository = repository(store, keys, secondApi, "second-key")
+
+        supervisorScope {
+            val first = async(Dispatchers.Default) {
+                firstRepository.submit(PairingLink("https://example.com", "token-1"), "First")
+            }
+            assertTrue(store.firstSaveEntered.await(2, TimeUnit.SECONDS))
+            val secondStarted = CountDownLatch(1)
+            val second = async(Dispatchers.Default) {
+                secondStarted.countDown()
+                secondRepository.submit(PairingLink("https://example.com", "token-2"), "Second")
+            }
+            assertTrue(secondStarted.await(2, TimeUnit.SECONDS))
+            store.releaseFirstSave.countDown()
+
+            val winner = withTimeout(2_000) { first.await() }
+            assertSuspendThrows<IllegalStateException> { withTimeout(2_000) { second.await() } }
+            assertEquals(winner, store.read())
+        }
+        assertTrue("first-key" in keys.aliases)
+        assertFalse("second-key" in keys.aliases)
+        assertEquals(listOf("second-key"), keys.deleted)
+    }
+
+    @Test
+    fun staleAuthenticationCompletionDoesNotReturnSessionOrClearReplacement() = runBlocking {
+        val store = FakeIdentityStore()
+        val keys = FakeKeys(ByteArray(64))
+        val api = FakeApi().apply {
+            challengeValue = "AQ"
+            verifyEntered = CountDownLatch(1)
+            releaseVerify = CountDownLatch(1)
+        }
+        val repository = repository(store, keys, api, "unused-key")
+        val stale = DeviceIdentity("https://example.com", 10, "Old", "old-key", pending = null)
+        val replacement = replacementIdentity()
+        keys.aliases += stale.keyAlias
+        keys.aliases += replacement.keyAlias
+        store.save(stale)
+
+        supervisorScope {
+            val authentication = async(Dispatchers.Default) { repository.authenticate(stale) }
+            assertTrue(api.verifyEntered!!.await(2, TimeUnit.SECONDS))
+            store.save(replacement)
+            api.releaseVerify!!.countDown()
+
+            assertSuspendThrows<IllegalStateException> {
+                withTimeout(2_000) { authentication.await() }
+            }
+        }
+        assertEquals(replacement, store.value)
+        assertTrue(keys.deleted.isEmpty())
     }
 
     @Test
@@ -581,6 +764,28 @@ class DeviceAuthApiTest {
         return fixture
     }
 
+    private fun repository(
+        store: IdentityStore,
+        keys: DeviceKeyOperations,
+        api: DeviceAuthService,
+        alias: String,
+    ) = PairingRepository(
+        identityStore = store,
+        keyOps = keys,
+        apiFactory = DeviceAuthApiFactory { api },
+        nowEpochMillis = { 1_000L },
+        pollDelay = {},
+        aliasFactory = { alias },
+    )
+
+    private fun replacementIdentity() = DeviceIdentity(
+        serverOrigin = "https://replacement.example",
+        deviceId = 999,
+        deviceName = "Replacement",
+        keyAlias = "replacement-key",
+        pending = null,
+    )
+
     private class RepositoryFixture(signature: ByteArray = ByteArray(64)) {
         val store = FakeIdentityStore()
         val keys = FakeKeys(signature)
@@ -601,6 +806,7 @@ class DeviceAuthApiTest {
     }
 
     private class FakeIdentityStore : IdentityStore {
+        @Volatile
         var value: DeviceIdentity? = null
         val saved = mutableListOf<DeviceIdentity>()
         var clearError: Throwable? = null
@@ -612,6 +818,28 @@ class DeviceAuthApiTest {
         }
         override fun clear() {
             clearError?.let { throw it }
+            value = null
+        }
+    }
+
+    private class BlockingFirstSaveIdentityStore : IdentityStore {
+        @Volatile
+        private var value: DeviceIdentity? = null
+        val firstSaveEntered = CountDownLatch(1)
+        val releaseFirstSave = CountDownLatch(1)
+        private val saveCalls = AtomicInteger()
+
+        override fun read(): DeviceIdentity? = value
+
+        override fun save(identity: DeviceIdentity) {
+            if (saveCalls.incrementAndGet() == 1) {
+                firstSaveEntered.countDown()
+                check(releaseFirstSave.await(2, TimeUnit.SECONDS)) { "Timed out releasing first identity save" }
+            }
+            value = identity
+        }
+
+        override fun clear() {
             value = null
         }
     }
@@ -640,12 +868,13 @@ class DeviceAuthApiTest {
         val aliases = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         val deleted = java.util.Collections.synchronizedList(mutableListOf<String>())
         val containsCalls = AtomicInteger()
+        val secondContainsEntered = CountDownLatch(1)
         val firstCreateEntered = CountDownLatch(1)
         val releaseFirstCreate = CountDownLatch(1)
         private val createCalls = AtomicInteger()
 
         override fun contains(alias: String): Boolean {
-            containsCalls.incrementAndGet()
+            if (containsCalls.incrementAndGet() == 2) secondContainsEntered.countDown()
             return alias in aliases
         }
 
@@ -674,6 +903,8 @@ class DeviceAuthApiTest {
         var requestError: Throwable? = null
         var statusError: Throwable? = null
         var statusCalls = 0
+        var verifyEntered: CountDownLatch? = null
+        var releaseVerify: CountDownLatch? = null
 
         override suspend fun requestPairing(token: String, name: String, jwk: PublicJwk): PairClaim {
             requestError?.let { throw it }
@@ -687,6 +918,10 @@ class DeviceAuthApiTest {
         override suspend fun challenge(deviceId: Long): String = challengeValue
         override suspend fun verify(deviceId: Long, challenge: String, signature: ByteArray): AuthSession {
             verifiedSignature = signature
+            verifyEntered?.countDown()
+            releaseVerify?.let {
+                check(it.await(2, TimeUnit.SECONDS)) { "Timed out releasing verification" }
+            }
             return AuthSession("frame_device_session=value; Path=/")
         }
         override suspend fun isAuthenticated(): Boolean = true
@@ -701,4 +936,7 @@ class DeviceAuthApiTest {
         if (error !is T) throw AssertionError("Expected ${T::class.java.simpleName}", error)
         error
     }
+
+    private fun takeRequest(): RecordedRequest =
+        server.takeRequest(2, TimeUnit.SECONDS) ?: throw AssertionError("Expected HTTP request")
 }
