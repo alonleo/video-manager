@@ -142,11 +142,16 @@ class MainViewModel(
     private fun handleFailure(error: Throwable) {
         if (error is CancellationException) throw error
         when (error) {
-            is PairingRejected,
+            is PairingRejected -> {
+                mutableApprovalDetails.value = null
+                mutableState.value = AppState.RecoverableError(
+                    "配对申请已被电脑拒绝，请重新扫码",
+                    false,
+                )
+            }
             is PairingExpired,
             is DeviceRevoked,
             -> {
-                runCatching { coordinator.cancel() }
                 mutableApprovalDetails.value = null
                 mutableState.value = AppState.NeedsPairing
             }

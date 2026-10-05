@@ -1,14 +1,19 @@
 package com.framearchive.mobile.ui
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import com.framearchive.mobile.network.AuthSession
 import com.framearchive.mobile.network.DeviceRevoked
 import com.framearchive.mobile.network.NetworkUnavailable
+import com.framearchive.mobile.network.PairingExpired
 import com.framearchive.mobile.network.PairingRejected
 import com.framearchive.mobile.pairing.PairingCoordinator
 import com.framearchive.mobile.pairing.PairingLink
 import com.framearchive.mobile.storage.DeviceIdentity
 import com.framearchive.mobile.storage.PendingPairing
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -83,6 +88,27 @@ class MainViewModelTest {
             approvalResult = CompletableDeferred<DeviceIdentity>().also {
                 it.completeExceptionally(PairingRejected())
             }
+            clearIdentityOnWaitFailure = true
+        }
+
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        assertEquals(
+            AppState.RecoverableError("配对申请已被电脑拒绝，请重新扫码", false),
+            viewModel.state.value,
+        )
+        assertNull(fake.identity)
+        assertFalse(fake.cancelled)
+    }
+
+    @Test
+    fun expiredPairingClearsIdentityAndReturnsToScanner() = runTest(dispatcher) {
+        val fake = FakeCoordinator(pendingIdentity()).apply {
+            approvalResult = CompletableDeferred<DeviceIdentity>().also {
+                it.completeExceptionally(PairingExpired())
+            }
+            clearIdentityOnWaitFailure = true
         }
 
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
@@ -90,7 +116,7 @@ class MainViewModelTest {
 
         assertEquals(AppState.NeedsPairing, viewModel.state.value)
         assertNull(fake.identity)
-        assertTrue(fake.cancelled)
+        assertFalse(fake.cancelled)
     }
 
     @Test
@@ -122,6 +148,7 @@ class MainViewModelTest {
             authenticationResult = CompletableDeferred<AuthSession>().also {
                 it.completeExceptionally(DeviceRevoked())
             }
+            clearIdentityOnAuthFailure = true
         }
 
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
@@ -129,7 +156,7 @@ class MainViewModelTest {
 
         assertEquals(AppState.NeedsPairing, viewModel.state.value)
         assertNull(fake.identity)
-        assertTrue(fake.cancelled)
+        assertFalse(fake.cancelled)
     }
 
     @Test
@@ -172,6 +199,29 @@ class MainViewModelTest {
         )
     }
 
+    @Test
+    fun clearingViewModelCancelsPollingWithoutClearingStoredIdentity() = runTest(dispatcher) {
+        val pending = pendingIdentity()
+        val fake = FakeCoordinator(pending).apply { approvalResult = CompletableDeferred() }
+        val store = ViewModelStore()
+        ViewModelProvider(
+            store,
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    MainViewModel(fake, dispatcher) { NOW } as T
+            },
+        )[MainViewModel::class.java]
+        runCurrent()
+
+        store.clear()
+        runCurrent()
+
+        assertTrue(fake.waitCancelled)
+        assertEquals(pending, fake.identity)
+        assertFalse(fake.cancelled)
+    }
+
     private class FakeCoordinator(initialIdentity: DeviceIdentity?) : PairingCoordinator {
         var identity = initialIdentity
         var submitResult: DeviceIdentity? = null
@@ -181,6 +231,9 @@ class MainViewModelTest {
         var authenticateCalls = 0
         var submitCalls = 0
         var cancelled = false
+        var waitCancelled = false
+        var clearIdentityOnWaitFailure = false
+        var clearIdentityOnAuthFailure = false
 
         override fun storedIdentity(): DeviceIdentity? = identity
 
@@ -191,7 +244,13 @@ class MainViewModelTest {
 
         override suspend fun waitForApproval(identity: DeviceIdentity): DeviceIdentity {
             waitCalls += 1
-            return approvalResult.await().also { this.identity = it }
+            return try {
+                approvalResult.await().also { this.identity = it }
+            } catch (error: Throwable) {
+                if (clearIdentityOnWaitFailure) this.identity = null
+                if (error is CancellationException) waitCancelled = true
+                throw error
+            }
         }
 
         override suspend fun awaitApproval(identity: DeviceIdentity): AuthSession =
@@ -199,7 +258,12 @@ class MainViewModelTest {
 
         override suspend fun authenticate(identity: DeviceIdentity): AuthSession {
             authenticateCalls += 1
-            return authenticationResult.await()
+            return try {
+                authenticationResult.await()
+            } catch (error: Throwable) {
+                if (clearIdentityOnAuthFailure) this.identity = null
+                throw error
+            }
         }
 
         override suspend fun resume(identity: DeviceIdentity): AuthSession =
