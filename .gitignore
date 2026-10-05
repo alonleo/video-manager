@@ -40,3 +40,10 @@ frontend/dist/
 .ruff_cache/
 *.tsbuildinfo
 *.orig
+# Android 本地工具、签名与产物
+/.android-sdk/
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+/android/signing/
+/artifacts/
