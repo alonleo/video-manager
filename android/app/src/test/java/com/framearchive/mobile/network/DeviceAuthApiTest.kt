@@ -15,6 +15,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -296,6 +298,42 @@ class DeviceAuthApiTest {
             while (client.dispatcher.runningCallsCount() != 0) delay(10)
         }
         assertTrue(request.isCancelled)
+        assertEquals(0, client.dispatcher.runningCallsCount())
+    }
+
+    @Test
+    fun cancellingAfterHeadersCancelsSlowResponseBodyRead() = runBlocking {
+        val headersReturned = CountDownLatch(1)
+        val responseBodyFailed = CountDownLatch(1)
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"authenticated":true,"padding":"${"x".repeat(256)}"}""")
+                .throttleBody(1, 250, TimeUnit.MILLISECONDS),
+        )
+        val client = OkHttpClient.Builder()
+            .addNetworkInterceptor { chain ->
+                chain.proceed(chain.request()).also { headersReturned.countDown() }
+            }
+            .eventListener(
+                object : EventListener() {
+                    override fun responseFailed(call: Call, ioe: IOException) {
+                        responseBodyFailed.countDown()
+                    }
+                },
+            )
+            .build()
+        val api = DeviceAuthApi(server.url("/").toString(), client)
+        val request = async(Dispatchers.Default) { api.isAuthenticated() }
+        assertTrue(headersReturned.await(2, TimeUnit.SECONDS))
+
+        request.cancel(CancellationException("stop slow body"))
+
+        withTimeout(2_000) { request.join() }
+        assertSuspendThrows<CancellationException> { request.await() }
+        assertTrue(responseBodyFailed.await(2, TimeUnit.SECONDS))
+        withTimeout(2_000) {
+            while (client.dispatcher.runningCallsCount() != 0) delay(10)
+        }
         assertEquals(0, client.dispatcher.runningCallsCount())
     }
 

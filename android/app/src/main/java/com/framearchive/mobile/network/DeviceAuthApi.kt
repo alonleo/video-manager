@@ -2,6 +2,7 @@ package com.framearchive.mobile.network
 
 import com.framearchive.mobile.crypto.PublicJwk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -163,44 +164,9 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
         ?: throw IllegalStateException("Unable to build device authentication URL")
 
     private suspend fun execute(request: Request): ApiResponse = try {
-        client.newCall(request).awaitResponse().use { response ->
-            ApiResponse(response.code, response.headers, response.body?.string().orEmpty())
-        }
+        client.newCall(request).awaitApiResponse()
     } catch (error: IOException) {
         throw NetworkUnavailable(error)
-    }
-
-    private data class ApiResponse(val code: Int, val headers: Headers, val body: String) {
-        fun requireCode(expected: Int, vararg secrets: String) {
-            if (code != expected) throw DeviceAuthApiException(errorMessage(*secrets))
-        }
-
-        fun errorMessage(vararg secrets: String): String {
-            val detail = try {
-                strictJsonObject().opt("detail") as? String
-            } catch (_: DeviceAuthApiException) {
-                null
-            }
-            var safe = detail?.takeIf { it.isNotBlank() } ?: "Device authentication request failed"
-            secrets.filter(String::isNotEmpty).forEach { secret -> safe = safe.replace(secret, "<redacted>") }
-            return safe
-        }
-
-        fun strictJsonObject(): JSONObject {
-            try {
-                val tokener = JSONTokener(body)
-                val value = tokener.nextValue() as? JSONObject
-                    ?: throw DeviceAuthApiException("Device authentication response is invalid")
-                if (tokener.nextClean() != 0.toChar()) {
-                    throw DeviceAuthApiException("Device authentication response is invalid")
-                }
-                return value
-            } catch (error: DeviceAuthApiException) {
-                throw error
-            } catch (error: JSONException) {
-                throw DeviceAuthApiException("Device authentication response is invalid", error)
-            }
-        }
     }
 
     private companion object {
@@ -238,22 +204,66 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
     }
 }
 
-internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+internal data class ApiResponse(val code: Int, val headers: Headers, val body: String) {
+    fun requireCode(expected: Int, vararg secrets: String) {
+        if (code != expected) throw DeviceAuthApiException(errorMessage(*secrets))
+    }
+
+    fun errorMessage(vararg secrets: String): String {
+        val detail = try {
+            strictJsonObject().opt("detail") as? String
+        } catch (_: DeviceAuthApiException) {
+            null
+        }
+        var safe = detail?.takeIf { it.isNotBlank() } ?: "Device authentication request failed"
+        secrets.filter(String::isNotEmpty).forEach { secret -> safe = safe.replace(secret, "<redacted>") }
+        return safe
+    }
+
+    fun strictJsonObject(): JSONObject {
+        try {
+            val tokener = JSONTokener(body)
+            val value = tokener.nextValue() as? JSONObject
+                ?: throw DeviceAuthApiException("Device authentication response is invalid")
+            if (tokener.nextClean() != 0.toChar()) {
+                throw DeviceAuthApiException("Device authentication response is invalid")
+            }
+            return value
+        } catch (error: DeviceAuthApiException) {
+            throw error
+        } catch (error: JSONException) {
+            throw DeviceAuthApiException("Device authentication response is invalid", error)
+        }
+    }
+}
+
+@OptIn(InternalCoroutinesApi::class)
+internal suspend fun Call.awaitApiResponse(): ApiResponse = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(
         object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 val cancellation = e.findCancellationException()
-                continuation.resumeWith(Result.failure(cancellation ?: e))
+                val token = continuation.tryResumeWithException(cancellation ?: e) ?: return
+                continuation.completeResume(token)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (!continuation.isActive) {
-                    response.close()
-                    return
-                }
-                continuation.resume(response) { _, unconsumedResponse, _ ->
-                    unconsumedResponse.close()
+                response.use {
+                    if (!continuation.isActive) return
+                    val result = try {
+                        ApiResponse(
+                            code = response.code,
+                            headers = response.headers.newBuilder().build(),
+                            body = response.body?.string().orEmpty(),
+                        )
+                    } catch (error: IOException) {
+                        val token = continuation.tryResumeWithException(error) ?: return
+                        continuation.completeResume(token)
+                        return
+                    }
+                    val token = continuation.tryResume(result) ?: return
+                    continuation.completeResume(token)
                 }
             }
         },
