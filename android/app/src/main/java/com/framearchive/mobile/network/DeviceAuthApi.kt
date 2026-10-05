@@ -1,16 +1,19 @@
 package com.framearchive.mobile.network
 
 import com.framearchive.mobile.crypto.PublicJwk
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.CookieJar
 import okhttp3.Headers
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Response
 import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -137,7 +140,6 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
         response.requireCode(200, challenge, encodedSignature)
         val matching = response.headers.values("Set-Cookie")
             .filter { header -> cookieName(header) == SESSION_COOKIE_NAME }
-            .distinct()
         if (matching.size != 1) {
             throw DeviceAuthApiException("Authentication response contains an invalid session cookie")
         }
@@ -160,14 +162,12 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
     private fun url(path: String): HttpUrl = origin.resolve(path)
         ?: throw IllegalStateException("Unable to build device authentication URL")
 
-    private suspend fun execute(request: Request): ApiResponse = withContext(Dispatchers.IO) {
-        try {
-            client.newCall(request).execute().use { response ->
-                ApiResponse(response.code, response.headers, response.body?.string().orEmpty())
-            }
-        } catch (error: IOException) {
-            throw NetworkUnavailable(error)
+    private suspend fun execute(request: Request): ApiResponse = try {
+        client.newCall(request).awaitResponse().use { response ->
+            ApiResponse(response.code, response.headers, response.body?.string().orEmpty())
         }
+    } catch (error: IOException) {
+        throw NetworkUnavailable(error)
     }
 
     private data class ApiResponse(val code: Int, val headers: Headers, val body: String) {
@@ -236,6 +236,42 @@ class DeviceAuthApi(serverOrigin: String, client: OkHttpClient) : DeviceAuthServ
             return pair.substring(0, equals).trim()
         }
     }
+}
+
+internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(
+        object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                val cancellation = e.findCancellationException()
+                continuation.resumeWith(Result.failure(cancellation ?: e))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!continuation.isActive) {
+                    response.close()
+                    return
+                }
+                continuation.resume(response) { _, unconsumedResponse, _ ->
+                    unconsumedResponse.close()
+                }
+            }
+        },
+    )
+}
+
+private fun Throwable.findCancellationException(): CancellationException? {
+    val pending = ArrayDeque<Throwable>()
+    val visited = mutableSetOf<Throwable>()
+    pending.add(this)
+    while (pending.isNotEmpty()) {
+        val current = pending.removeLast()
+        if (!visited.add(current)) continue
+        if (current is CancellationException) return current
+        current.cause?.let(pending::add)
+        current.suppressed.forEach(pending::add)
+    }
+    return null
 }
 
 private fun JSONObject.strictPositiveLong(name: String): Long {

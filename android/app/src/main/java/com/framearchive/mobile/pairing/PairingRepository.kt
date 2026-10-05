@@ -60,18 +60,18 @@ class PairingRepository internal constructor(
         apiFactory = DeviceAuthApiFactory { origin -> DeviceAuthApi(origin, client) },
         nowEpochMillis = System::currentTimeMillis,
         pollDelay = { delay(it) },
-        aliasFactory = { "frame-device-${UUID.randomUUID()}" },
+        aliasFactory = { "framearchive-device-auth-v1-${UUID.randomUUID()}" },
     )
 
     override fun storedIdentity(): DeviceIdentity? = identityStore.read()
 
     override suspend fun submit(link: PairingLink, name: String): DeviceIdentity {
         require(name.isNotBlank()) { "Device name must not be blank" }
-        val alias = unusedAlias()
+        val createdKey = createKey()
+        val alias = createdKey.alias
         var persisted = false
         try {
-            val jwk = keyOps.create(alias)
-            val claim = apiFactory.create(link.serverOrigin).requestPairing(link.token, name, jwk)
+            val claim = apiFactory.create(link.serverOrigin).requestPairing(link.token, name, createdKey.publicJwk)
             val identity = DeviceIdentity(
                 serverOrigin = link.serverOrigin,
                 deviceId = claim.deviceId,
@@ -183,11 +183,18 @@ class PairingRepository internal constructor(
         failure?.let { throw it }
     }
 
-    private fun unusedAlias(): String {
+    private fun createKey(): CreatedKey = synchronized(ALIAS_CREATION_LOCK) {
         repeat(MAX_ALIAS_ATTEMPTS) {
-            val candidate = aliasFactory()
-            require(candidate.isNotBlank()) { "Key alias must not be blank" }
-            if (!keyOps.contains(candidate)) return candidate
+            val alias = aliasFactory()
+            require(alias.isNotBlank()) { "Key alias must not be blank" }
+            if (!keyOps.contains(alias)) {
+                try {
+                    return@synchronized CreatedKey(alias, keyOps.create(alias))
+                } catch (error: Throwable) {
+                    cleanupNewAlias(alias, error)
+                    throw error
+                }
+            }
         }
         throw DeviceAuthApiException("Unable to allocate a device key alias")
     }
@@ -234,5 +241,8 @@ class PairingRepository internal constructor(
         const val MAX_ALIAS_ATTEMPTS = 16
         const val P1363_SIGNATURE_BYTES = 64
         val BASE64URL_CHARACTERS = ('A'..'Z') + ('a'..'z') + ('0'..'9') + setOf('-', '_')
+        val ALIAS_CREATION_LOCK = Any()
     }
+
+    private data class CreatedKey(val alias: String, val publicJwk: PublicJwk)
 }

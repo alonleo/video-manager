@@ -8,10 +8,17 @@ import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.DeviceIdentity
 import com.framearchive.mobile.storage.IdentityStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -21,8 +28,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.Base64
 import java.io.IOException
+import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class DeviceAuthApiTest {
     private lateinit var server: MockWebServer
@@ -106,6 +116,21 @@ class DeviceAuthApiTest {
             MockResponse().setBody("{}")
                 .addHeader("Set-Cookie", "frame_device_session=one; Path=/")
                 .addHeader("Set-Cookie", "frame_device_session=two; Path=/"),
+        )
+        val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
+
+        assertSuspendThrows<DeviceAuthApiException> {
+            api.verify(1, "challenge", ByteArray(64))
+        }
+    }
+
+    @Test
+    fun verifyRejectsIdenticalDuplicateTargetCookies() = runTest {
+        val duplicate = "frame_device_session=same; Path=/; HttpOnly"
+        server.enqueue(
+            MockResponse().setBody("{}")
+                .addHeader("Set-Cookie", duplicate)
+                .addHeader("Set-Cookie", duplicate),
         )
         val api = DeviceAuthApi(server.url("/").toString(), OkHttpClient())
 
@@ -256,6 +281,25 @@ class DeviceAuthApiTest {
     }
 
     @Test
+    fun cancellingInFlightRequestCancelsOkHttpCall() = runBlocking {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val client = OkHttpClient()
+        val api = DeviceAuthApi(server.url("/").toString(), client)
+        val request = async(Dispatchers.Default) { api.isAuthenticated() }
+        assertTrue(server.takeRequest(2, TimeUnit.SECONDS) != null)
+
+        request.cancel(CancellationException("stop in flight"))
+
+        assertSuspendThrows<CancellationException> { request.await() }
+        withTimeout(2_000) {
+            request.join()
+            while (client.dispatcher.runningCallsCount() != 0) delay(10)
+        }
+        assertTrue(request.isCancelled)
+        assertEquals(0, client.dispatcher.runningCallsCount())
+    }
+
+    @Test
     fun constructorRejectsNonOriginServerUrl() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             DeviceAuthApi("https://example.com/attacker/path", OkHttpClient())
@@ -398,6 +442,54 @@ class DeviceAuthApiTest {
     }
 
     @Test
+    fun aliasCheckAndCreationAreLockedAcrossRepositoryInstances() = runBlocking {
+        val keys = RacingKeys()
+        val firstApi = FakeApi().apply {
+            claim = PairClaim(1, 1, "first-secret", "FIRST")
+        }
+        val secondApi = FakeApi().apply {
+            requestError = DeviceAuthApiException("second submit failed")
+        }
+        val secondAliases = ArrayDeque(listOf("race-key", "second-key"))
+        val firstRepository = PairingRepository(
+            identityStore = FakeIdentityStore(),
+            keyOps = keys,
+            apiFactory = DeviceAuthApiFactory { firstApi },
+            nowEpochMillis = { 1_000L },
+            pollDelay = {},
+            aliasFactory = { "race-key" },
+        )
+        val secondRepository = PairingRepository(
+            identityStore = FakeIdentityStore(),
+            keyOps = keys,
+            apiFactory = DeviceAuthApiFactory { secondApi },
+            nowEpochMillis = { 1_000L },
+            pollDelay = {},
+            aliasFactory = { secondAliases.removeFirst() },
+        )
+
+        supervisorScope {
+            val first = async(Dispatchers.Default) {
+                firstRepository.submit(PairingLink("https://example.com", "token-1"), "First")
+            }
+            assertTrue(keys.firstCreateEntered.await(2, TimeUnit.SECONDS))
+            val second = async(Dispatchers.Default) {
+                secondRepository.submit(PairingLink("https://example.com", "token-2"), "Second")
+            }
+            delay(150)
+            val containsCallsWhileFirstCreateBlocked = keys.containsCalls.get()
+            keys.releaseFirstCreate.countDown()
+
+            assertEquals("race-key", withTimeout(2_000) { first.await() }.keyAlias)
+            assertSuspendThrows<DeviceAuthApiException> { withTimeout(2_000) { second.await() } }
+            assertEquals(1, containsCallsWhileFirstCreateBlocked)
+        }
+        assertTrue("race-key" in keys.aliases)
+        assertFalse("race-key" in keys.deleted)
+        assertEquals(listOf("second-key"), keys.deleted)
+    }
+
+    @Test
     fun cancellationDuringSubmitCleansNewAliasAndPropagates() = runTest {
         val fixture = repositoryFixture()
         val cancellation = CancellationException("stop")
@@ -500,6 +592,36 @@ class DeviceAuthApiTest {
             lastChallenge = challenge
             return signature
         }
+        override fun delete(alias: String) {
+            deleted += alias
+            aliases -= alias
+        }
+    }
+
+    private class RacingKeys : DeviceKeyOperations {
+        val aliases = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        val deleted = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val containsCalls = AtomicInteger()
+        val firstCreateEntered = CountDownLatch(1)
+        val releaseFirstCreate = CountDownLatch(1)
+        private val createCalls = AtomicInteger()
+
+        override fun contains(alias: String): Boolean {
+            containsCalls.incrementAndGet()
+            return alias in aliases
+        }
+
+        override fun create(alias: String): PublicJwk {
+            if (alias == "race-key" && createCalls.incrementAndGet() == 1) {
+                firstCreateEntered.countDown()
+                check(releaseFirstCreate.await(2, TimeUnit.SECONDS)) { "Timed out releasing first key creation" }
+            }
+            aliases += alias
+            return PublicJwk(x = "x", y = "y")
+        }
+
+        override fun sign(alias: String, challenge: ByteArray): ByteArray = ByteArray(64)
+
         override fun delete(alias: String) {
             deleted += alias
             aliases -= alias
