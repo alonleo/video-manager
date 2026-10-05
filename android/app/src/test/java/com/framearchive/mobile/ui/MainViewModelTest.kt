@@ -63,6 +63,22 @@ class MainViewModelTest {
     }
 
     @Test
+    fun submissionIsIgnoredUntilIdentityRecoveryCompletes() = runTest(dispatcher) {
+        val fake = FakeCoordinator(null)
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+
+        viewModel.submit(
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${"a".repeat(43)}",
+            "测试手机",
+        )
+        assertEquals(AppState.Authenticating, viewModel.uiState.value.appState)
+        assertEquals(0, fake.submitCalls)
+
+        runCurrent()
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
+    }
+
+    @Test
     fun approvedPairingTransitionsToAuthenticatingThenBrowsing() = runTest(dispatcher) {
         val pending = pendingIdentity()
         val approved = pending.copy(pending = null)
@@ -90,7 +106,9 @@ class MainViewModelTest {
         assertFalse(viewModel.uiState.value.appState.toString().contains("secret"))
         val observedStates = observed.map(MainUiState::appState)
         val awaitingIndex = observedStates.indexOf(AppState.AwaitingApproval("123456", EXPIRES_AT))
-        val authenticatingIndex = observedStates.indexOf(AppState.Authenticating)
+        val authenticatingIndex = observedStates.withIndex().indexOfFirst { (index, state) ->
+            index > awaitingIndex && state == AppState.Authenticating
+        }
         val browsingIndex = observedStates.indexOf(viewModel.uiState.value.appState)
         assertTrue(awaitingIndex >= 0)
         assertTrue(authenticatingIndex > awaitingIndex)

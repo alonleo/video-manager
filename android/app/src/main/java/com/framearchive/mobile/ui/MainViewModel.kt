@@ -56,7 +56,7 @@ class MainViewModel(
     initialDeviceName: String = "",
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
-    private val mutableUiState = MutableStateFlow(MainUiState(AppState.NeedsPairing))
+    private val mutableUiState = MutableStateFlow(MainUiState(AppState.Authenticating))
     val uiState: StateFlow<MainUiState> = mutableUiState.asStateFlow()
 
     private val mutableApprovalDetails = MutableStateFlow<ApprovalDetails?>(null)
@@ -88,13 +88,21 @@ class MainViewModel(
     }
 
     fun submit() {
+        if (!canSubmitPairing()) return
         val draft = mutablePairingDraft.value
         submitDraft(draft.pairingLink, draft.deviceName)
     }
 
     fun submit(rawLink: String, deviceName: String) {
+        if (!canSubmitPairing()) return
         mutablePairingDraft.value = PairingDraft(rawLink, deviceName)
         submitDraft(rawLink, deviceName)
+    }
+
+    private fun canSubmitPairing(): Boolean = when (val state = mutableUiState.value.appState) {
+        AppState.NeedsPairing -> true
+        is AppState.RecoverableError -> !state.canRetry
+        else -> false
     }
 
     private fun submitDraft(rawLink: String, deviceName: String) {

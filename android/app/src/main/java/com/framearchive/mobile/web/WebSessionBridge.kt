@@ -23,7 +23,6 @@ import android.webkit.WebStorage
 import android.net.http.SslError
 import androidx.annotation.RequiresApi
 import java.io.File
-import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
@@ -243,38 +242,21 @@ class WebSessionBridge(
             operation.launchDownload {
                 val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                     ?: File(context.filesDir, "downloads")
-                if (!directory.exists() && !directory.mkdirs()) {
-                    notifyDownloadFailure(operation)
-                    return@launchDownload
-                }
-                val temporary = try {
-                    File.createTempFile(".frame-download-", ".part", directory)
-                } catch (_: Exception) {
-                    notifyDownloadFailure(operation)
-                    return@launchDownload
-                }
                 val fetcher = SameOriginDownloadFetcher(downloadClient, policy, cookiePair)
                 val unregister = operation.registerCancellation(fetcher::cancel)
                 try {
-                    val result = temporary.outputStream().buffered().use { output ->
-                        fetcher.fetch(url, output)
-                    }
-                    if (result is DownloadFetchResult.Success && !operation.isCancelled) {
-                        val destination = uniqueDestination(directory, result.filename)
-                        try {
-                            Files.move(temporary.toPath(), destination.toPath())
-                            withContext(Dispatchers.Main.immediate) {
-                                if (!operation.isCancelled) onDownloadCompleted()
-                            }
-                        } catch (_: Exception) {
-                            notifyDownloadFailure(operation)
+                    val result = SecureDownloadFileWriter(fetcher).download(url, directory)
+                    when (result) {
+                        is DownloadFileResult.Saved -> withContext(Dispatchers.Main.immediate) {
+                            if (!operation.isCancelled) onDownloadCompleted()
                         }
-                    } else {
-                        notifyDownloadFailure(operation)
+                        DownloadFileResult.Cancelled -> Unit
+                        DownloadFileResult.Rejected,
+                        DownloadFileResult.Failed,
+                        -> notifyDownloadFailure(operation)
                     }
                 } finally {
                     unregister()
-                    if (temporary.exists()) temporary.delete()
                 }
             }
         }
@@ -299,20 +281,6 @@ class WebSessionBridge(
         withContext(Dispatchers.Main.immediate) {
             if (!operation.isCancelled) onDownloadFailed()
         }
-    }
-
-    private fun uniqueDestination(directory: File, filename: String): File {
-        val safe = DownloadFilenamePolicy.sanitize(filename)
-        var candidate = File(directory, safe)
-        var counter = 1
-        while (candidate.exists()) {
-            val dot = safe.lastIndexOf('.').takeIf { it > 0 } ?: safe.length
-            val stem = safe.substring(0, dot)
-            val extension = safe.substring(dot)
-            candidate = File(directory, "$stem ($counter)$extension")
-            counter += 1
-        }
-        return candidate
     }
 
     private companion object {
