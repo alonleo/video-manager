@@ -3,12 +3,16 @@ package com.framearchive.mobile.storage
 import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.ProviderException
+import java.security.UnrecoverableKeyException
 import java.util.Base64
+import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -27,6 +31,25 @@ class IdentityStoreCorrupted(
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
+class IdentityStoreUnavailable(
+    message: String,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
+
+internal enum class IdentityReadFailure {
+    CORRUPTED,
+    UNAVAILABLE,
+}
+
+internal fun classifyIdentityReadSecurityFailure(error: Throwable): IdentityReadFailure = when (error) {
+    is BadPaddingException,
+    is KeyPermanentlyInvalidatedException,
+    is UnrecoverableKeyException,
+    -> IdentityReadFailure.CORRUPTED
+
+    else -> IdentityReadFailure.UNAVAILABLE
+}
+
 internal object GcmIvValidator {
     fun requireValid(iv: ByteArray?): ByteArray =
         iv?.takeIf { it.size == GCM_IV_SIZE_BYTES }
@@ -38,8 +61,12 @@ private const val GCM_IV_SIZE_BYTES = 12
 class EncryptedIdentityStore(context: Context) : IdentityStore {
     private val preferences: SharedPreferences =
         (context.applicationContext ?: context).getSharedPreferences(PREFERENCES_FILE, Context.MODE_PRIVATE)
-    @Synchronized
-    override fun read(): DeviceIdentity? {
+
+    override fun read(): DeviceIdentity? = synchronized(STORE_LOCK) {
+        readLocked()
+    }
+
+    private fun readLocked(): DeviceIdentity? {
         val hasIv = preferences.contains(IV_KEY)
         val hasCiphertext = preferences.contains(CIPHERTEXT_KEY)
         if (!hasIv && !hasCiphertext) return null
@@ -78,11 +105,18 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
                 doFinal(ciphertext)
             }
         } catch (error: GeneralSecurityException) {
-            clearCorruptedAndThrow("Stored device identity cannot be decrypted", error)
+            when (classifyIdentityReadSecurityFailure(error)) {
+                IdentityReadFailure.CORRUPTED ->
+                    clearCorruptedAndThrow("Stored device identity cannot be decrypted", error)
+                IdentityReadFailure.UNAVAILABLE ->
+                    throw IdentityStoreUnavailable("Encrypted device identity is temporarily unavailable", error)
+            }
         } catch (error: IOException) {
-            clearCorruptedAndThrow("Stored device identity key cannot be loaded", error)
+            throw IdentityStoreUnavailable("Encrypted device identity key cannot be loaded", error)
+        } catch (error: ProviderException) {
+            throw IdentityStoreUnavailable("Encrypted device identity provider is unavailable", error)
         } catch (error: IllegalArgumentException) {
-            clearCorruptedAndThrow("Stored device identity encryption parameters are invalid", error)
+            throw IdentityStoreUnavailable("Encrypted device identity parameters are unsupported", error)
         }
 
         return try {
@@ -92,8 +126,11 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         }
     }
 
-    @Synchronized
-    override fun save(identity: DeviceIdentity) {
+    override fun save(identity: DeviceIdentity) = synchronized(STORE_LOCK) {
+        saveLocked(identity)
+    }
+
+    private fun saveLocked(identity: DeviceIdentity) {
         val plaintext = IdentityCodec.encode(identity).toByteArray(StandardCharsets.UTF_8)
         val encrypted = try {
             Cipher.getInstance(CIPHER_TRANSFORMATION).run {
@@ -102,9 +139,13 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
                 EncryptedPayload(providerIv, doFinal(plaintext))
             }
         } catch (error: GeneralSecurityException) {
-            throw IllegalStateException("Unable to encrypt device identity", error)
+            throw IdentityStoreUnavailable("Unable to encrypt device identity", error)
         } catch (error: IOException) {
-            throw IllegalStateException("Unable to load the device identity key", error)
+            throw IdentityStoreUnavailable("Unable to load the device identity key", error)
+        } catch (error: ProviderException) {
+            throw IdentityStoreUnavailable("Device identity encryption provider is unavailable", error)
+        } catch (error: IllegalArgumentException) {
+            throw IdentityStoreUnavailable("Device identity encryption parameters are unsupported", error)
         }
 
         val committed = preferences.edit()
@@ -117,8 +158,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         }
     }
 
-    @Synchronized
-    override fun clear() {
+    override fun clear() = synchronized(STORE_LOCK) {
         if (!preferences.edit().clear().commit()) {
             throw IllegalStateException("Unable to clear encrypted device identity")
         }
@@ -132,7 +172,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
-    private fun getOrCreateKey(): SecretKey {
+    private fun getOrCreateKey(): SecretKey = synchronized(STORE_LOCK) {
         existingKey()?.let { return it }
 
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
@@ -146,7 +186,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
             .setUserAuthenticationRequired(false)
             .build()
         generator.init(parameters)
-        return generator.generateKey()
+        generator.generateKey()
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
@@ -169,6 +209,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     )
 
     private companion object {
+        val STORE_LOCK = Any()
         const val PREFERENCES_FILE = "frame_archive_encrypted_identity"
         const val IV_KEY = "iv"
         const val CIPHERTEXT_KEY = "ciphertext"

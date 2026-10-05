@@ -2,6 +2,7 @@ package com.framearchive.mobile.storage
 
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 
 data class DeviceIdentity(
     val serverOrigin: String,
@@ -9,14 +10,22 @@ data class DeviceIdentity(
     val deviceName: String,
     val keyAlias: String,
     val pending: PendingPairing? = null,
-)
+) {
+    override fun toString(): String =
+        "DeviceIdentity(serverOrigin=$serverOrigin, deviceId=$deviceId, " +
+            "deviceName=$deviceName, keyAlias=$keyAlias, pending=${pending != null})"
+}
 
 data class PendingPairing(
     val pairingId: Long,
     val claimSecret: String,
     val verificationCode: String,
     val expiresAtEpochMillis: Long,
-)
+) {
+    override fun toString(): String =
+        "PendingPairing(pairingId=$pairingId, claimSecret=<redacted>, " +
+            "verificationCode=<redacted>, expiresAtEpochMillis=$expiresAtEpochMillis)"
+}
 
 internal class IdentityCodecException(
     message: String,
@@ -56,7 +65,12 @@ internal object IdentityCodec {
 
     fun decode(encoded: String): DeviceIdentity {
         try {
-            val envelope = JSONObject(encoded)
+            val input = JSONTokener(encoded)
+            val envelope = input.nextValue() as? JSONObject
+                ?: throw IdentityCodecException(INVALID_IDENTITY)
+            if (input.nextClean() != 0.toChar()) {
+                throw IdentityCodecException(INVALID_IDENTITY)
+            }
             if (envelope.strictLong(VERSION) != CURRENT_VERSION.toLong()) {
                 throw IdentityCodecException(UNSUPPORTED_VERSION)
             }

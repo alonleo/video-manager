@@ -6,6 +6,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.InvalidAlgorithmParameterException
+import java.security.NoSuchAlgorithmException
+import java.security.ProviderException
+import java.security.UnrecoverableKeyException
+import javax.crypto.AEADBadTagException
+import javax.crypto.BadPaddingException
 
 class IdentityCodecTest {
     @Test
@@ -172,6 +178,47 @@ class IdentityCodecTest {
         """.trimIndent()
 
         assertEquals(validIdentity(), IdentityCodec.decode(json))
+    }
+
+    @Test
+    fun `trailing content after identity envelope is rejected`() {
+        listOf(
+            """{"version":1,"identity":${identityJson()}} garbage""",
+            """{"version":1,"identity":${identityJson()}} {}""",
+            """{"version":1,"identity":${identityJson()}} []""",
+        ).forEach(::assertRejected)
+    }
+
+    @Test
+    fun `identity string representations redact pending secrets`() {
+        val secret = "actual-claim-secret"
+        val code = "actual-verification-code"
+        val pending = PendingPairing(9, secret, code, 99)
+        val identity = validIdentity(pending)
+
+        listOf(pending.toString(), identity.toString()).forEach { representation ->
+            assertFalse(representation.contains(secret))
+            assertFalse(representation.contains(code))
+        }
+    }
+
+    @Test
+    fun `read security failure classification clears only known corruption`() {
+        listOf(
+            AEADBadTagException(),
+            BadPaddingException(),
+            UnrecoverableKeyException(),
+        ).forEach { error ->
+            assertEquals(IdentityReadFailure.CORRUPTED, classifyIdentityReadSecurityFailure(error))
+        }
+
+        listOf(
+            NoSuchAlgorithmException(),
+            InvalidAlgorithmParameterException(),
+            ProviderException(),
+        ).forEach { error ->
+            assertEquals(IdentityReadFailure.UNAVAILABLE, classifyIdentityReadSecurityFailure(error))
+        }
     }
 
     private fun assertRejected(json: String) {
