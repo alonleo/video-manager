@@ -36,6 +36,7 @@ frontend/dist/
 .idea/
 .DS_Store
 .run/
+.superpowers/
 .ruff_cache/
 *.tsbuildinfo
 *.orig
