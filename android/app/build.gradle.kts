@@ -1,6 +1,23 @@
+import com.android.build.api.variant.HasUnitTestBuilder
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
+
+val releaseSigningPropertiesFile = rootProject.file("signing/keystore.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.isFile) {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
+}
+val releaseSigningKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val releaseKeystoreFile = releaseSigningProperties.getProperty("storeFile")
+    ?.takeIf(String::isNotBlank)
+    ?.let(rootProject::file)
+val hasCompleteReleaseSigning = releaseSigningPropertiesFile.isFile &&
+    releaseSigningKeys.all { !releaseSigningProperties.getProperty(it).isNullOrBlank() } &&
+    releaseKeystoreFile?.isFile == true
 
 android {
     namespace = "com.framearchive.mobile"
@@ -22,6 +39,31 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    val localReleaseSigning = if (hasCompleteReleaseSigning) {
+        signingConfigs.create("localRelease") {
+            storeFile = releaseKeystoreFile
+            storePassword = releaseSigningProperties.getProperty("storePassword")
+            keyAlias = releaseSigningProperties.getProperty("keyAlias")
+            keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    } else {
+        null
+    }
+
+    buildTypes {
+        getByName("release") {
+            localReleaseSigning?.let { signingConfig = it }
+        }
+    }
+}
+
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variantBuilder ->
+        (variantBuilder as HasUnitTestBuilder).enableUnitTest = true
     }
 }
 
