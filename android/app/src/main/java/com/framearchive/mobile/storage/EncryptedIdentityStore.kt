@@ -3,11 +3,13 @@ package com.framearchive.mobile.storage
 import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
+import java.security.InvalidAlgorithmParameterException
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.ProviderException
@@ -19,6 +21,7 @@ import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
 interface IdentityStore {
@@ -56,6 +59,26 @@ internal fun classifyIdentityReadSecurityFailure(error: Throwable): IdentityRead
 }
 
 internal fun shouldRetryInvalidatedKey(retryCount: Int): Boolean = retryCount == 0
+
+internal data class IdentityKeyMetadata(
+    val keySizeBits: Int,
+    val purposes: Int,
+    val blockModes: Set<String>,
+    val encryptionPaddings: Set<String>,
+    val userAuthenticationRequired: Boolean,
+    val randomizedEncryptionRequired: Boolean,
+)
+
+internal fun isValidIdentityStoreKey(metadata: IdentityKeyMetadata): Boolean =
+    metadata.keySizeBits == IDENTITY_KEY_SIZE_BITS &&
+        metadata.purposes == IDENTITY_KEY_PURPOSES &&
+        metadata.blockModes == setOf(KeyProperties.BLOCK_MODE_GCM) &&
+        metadata.encryptionPaddings == setOf(KeyProperties.ENCRYPTION_PADDING_NONE) &&
+        !metadata.userAuthenticationRequired &&
+        metadata.randomizedEncryptionRequired
+
+private const val IDENTITY_KEY_SIZE_BITS = 256
+private val IDENTITY_KEY_PURPOSES = KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
 
 private inline fun <reified T : Throwable> Throwable.hasCauseOfType(): Boolean {
     val visited = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
@@ -170,7 +193,43 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         if (key !is SecretKey || !key.algorithm.equals(KeyProperties.KEY_ALGORITHM_AES, ignoreCase = true)) {
             throw KeyStoreException("Device identity alias is not an AES secret key")
         }
+        val metadata = identityKeyMetadata(key)
+        if (!isValidIdentityStoreKey(metadata)) {
+            throw KeyStoreException("Device identity key parameters do not match the required policy")
+        }
         return key
+    }
+
+    @Throws(GeneralSecurityException::class)
+    private fun identityKeyMetadata(key: SecretKey): IdentityKeyMetadata {
+        val keyInfo = SecretKeyFactory.getInstance(key.algorithm, ANDROID_KEY_STORE)
+            .getKeySpec(key, KeyInfo::class.java) as? KeyInfo
+            ?: throw KeyStoreException("Android Keystore did not provide key metadata")
+        return IdentityKeyMetadata(
+            keySizeBits = keyInfo.keySize,
+            purposes = keyInfo.purposes,
+            blockModes = keyInfo.blockModes?.toSet().orEmpty(),
+            encryptionPaddings = keyInfo.encryptionPaddings?.toSet().orEmpty(),
+            userAuthenticationRequired = keyInfo.isUserAuthenticationRequired,
+            randomizedEncryptionRequired = rejectsCallerProvidedIv(key),
+        )
+    }
+
+    @Throws(GeneralSecurityException::class)
+    private fun rejectsCallerProvidedIv(key: SecretKey): Boolean = try {
+        // KeyInfo has no public randomized-encryption getter (including API 36). A valid caller-IV
+        // init must therefore be rejected to prove this existing key still enforces provider IVs.
+        // The probe intentionally never encrypts data or persists its IV.
+        Cipher.getInstance(CIPHER_TRANSFORMATION).run {
+            init(
+                Cipher.ENCRYPT_MODE,
+                key,
+                GCMParameterSpec(GCM_TAG_SIZE_BITS, ByteArray(GCM_IV_SIZE_BYTES)),
+            )
+        }
+        false
+    } catch (_: InvalidAlgorithmParameterException) {
+        true
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
@@ -182,7 +241,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
             KEY_ALIAS,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
         )
-            .setKeySize(KEY_SIZE_BITS)
+            .setKeySize(IDENTITY_KEY_SIZE_BITS)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setUserAuthenticationRequired(false)
@@ -299,7 +358,6 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         const val KEY_ALIAS = "frame_archive_identity_store_v1"
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
         const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
-        const val KEY_SIZE_BITS = 256
         const val GCM_TAG_SIZE_BITS = 128
     }
 }
