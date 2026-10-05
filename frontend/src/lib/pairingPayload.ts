@@ -72,5 +72,8 @@ export function buildPairingPayload(
   token: string,
 ): string {
   const normalizedOrigin = normalizePairingOrigin(origin, mode);
+  if (mode === "browser") {
+    return `${normalizedOrigin}/pair#token=${encodeURIComponent(token)}`;
+  }
   return `framearchive://pair?v=1&server=${encodeURIComponent(normalizedOrigin)}&token=${encodeURIComponent(token)}`;
 }

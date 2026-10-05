@@ -21,6 +21,12 @@ describe("buildPairingPayload", () => {
     ).toThrow("浏览器配对必须使用 HTTPS");
   });
 
+  it("builds the existing browser pairing URL", () => {
+    expect(
+      buildPairingPayload("browser", "https://video.example.com", "a&b"),
+    ).toBe("https://video.example.com/pair#token=a%26b");
+  });
+
   it("rejects public IPv4 addresses for Android HTTP pairing", () => {
     expect(() =>
       buildPairingPayload("android", "http://8.8.8.8:8420", "abc"),
@@ -33,7 +39,13 @@ describe("buildPairingPayload", () => {
     ).toContain("framearchive://pair?");
   });
 
-  it("normalizes the origin and safely encodes the token", () => {
+  it("removes the browser default port and safely encodes the token", () => {
+    expect(
+      buildPairingPayload("browser", "https://VIDEO.Example.com:443/", "a&b"),
+    ).toBe("https://video.example.com/pair#token=a%26b");
+  });
+
+  it("preserves a browser non-default port and safely encodes the token", () => {
     expect(
       buildPairingPayload(
         "browser",
@@ -41,7 +53,7 @@ describe("buildPairingPayload", () => {
         "a&b=c /中文",
       ),
     ).toBe(
-      "framearchive://pair?v=1&server=https%3A%2F%2Fvideo.example.com%3A8443&token=a%26b%3Dc%20%2F%E4%B8%AD%E6%96%87",
+      "https://video.example.com:8443/pair#token=a%26b%3Dc%20%2F%E4%B8%AD%E6%96%87",
     );
   });
 });
