@@ -1,0 +1,80 @@
+import json
+from pathlib import Path
+from playwright.sync_api import sync_playwright, expect
+ROOT=Path(__file__).resolve().parents[1]
+OUT=ROOT/'.run/photo-audit'
+checks=[]
+def passed(name):checks.append(name);print('PASS',name,flush=True)
+with sync_playwright() as p:
+    browser=p.chromium.launch(headless=True,executable_path='/usr/bin/google-chrome',args=['--no-sandbox'])
+    page=browser.new_page(viewport={'width':1440,'height':1000},device_scale_factor=1)
+    errors=[];forbidden=[]
+    page.on('pageerror',lambda e:errors.append(str(e)))
+    page.on('request',lambda r:forbidden.append(r.url) if any(t in r.url for t in ['/playback-info','/conversions','/conversion-options','/subtitles']) else None)
+    base='http://127.0.0.1:8439'
+    page.goto(base)
+    expect(page.locator('.video-card')).to_have_count(1)
+    expect(page.locator('.video-card h3')).to_have_text('Only-video')
+    page.get_by_role('link',name='照片库',exact=True).click()
+    expect(page.locator('.video-card')).to_have_count(24)
+    assert all('/photos/' in v for v in page.locator('.video-card').evaluate_all('(items)=>items.map(i=>i.getAttribute("href"))'))
+    passed('独立视频库与照片库无混排')
+    page.get_by_role('searchbox',name='搜索照片标题或描述').fill('Moment-00')
+    expect(page.locator('.video-card')).to_have_count(1)
+    page.get_by_role('button',name='清空搜索',exact=True).click()
+    expect(page.locator('.video-card')).to_have_count(24)
+    page.get_by_role('button',name='第 2 页',exact=True).click()
+    expect(page.locator('.video-card')).to_have_count(3)
+    page.locator('.video-card').first.click()
+    expect(page.locator('.photo-canvas img')).to_be_visible()
+    page.wait_for_function('document.querySelector(".photo-canvas img")?.naturalWidth > 0')
+    page.wait_for_timeout(300)
+    loaded_photo_images=page.evaluate(r"""performance.getEntriesByType('resource')
+        .map(entry => entry.name)
+        .filter(url => /\/api\/photos\/\d+\/image/.test(url))""")
+    assert len(set(loaded_photo_images)) >= 2, '相邻照片尚未预加载，切换时仍需等待原图请求和解码'
+    passed('相邻照片提前加载，左右切换无需等待网络')
+    assert page.get_by_role('button',name='转换格式',exact=True).count()==0
+    page.get_by_role('button',name='管理照片',exact=True).click()
+    assert page.get_by_role('button',name='移动照片',exact=True).count()==1
+    page.get_by_role('button',name='放大照片',exact=True).click()
+    expect(page.locator('.photo-controls')).to_contain_text('125%')
+    page.get_by_role('button',name='适应窗口',exact=True).click()
+    page.get_by_role('button',name='全屏',exact=True).click()
+    page.wait_for_function('!!document.fullscreenElement')
+    page.get_by_role('button',name='退出全屏',exact=True).click()
+    passed('照片加载、缩放、全屏及独立工具栏')
+    page.get_by_role('button',name='收藏',exact=True).click()
+    expect(page.get_by_role('button',name='已收藏',exact=True)).to_be_visible()
+    with page.expect_download() as d:page.get_by_role('link',name='下载原图',exact=True).click()
+    assert d.value.suggested_filename.endswith('.jpg')
+    passed('收藏和下载原图')
+    page.screenshot(path=str(OUT/'photo-desktop.png'),full_page=True)
+    page.get_by_role('link',name='返回照片库',exact=True).click()
+    expect(page).to_have_url(base+'/photos?page=2')
+    expect(page.locator('.video-card')).to_have_count(3)
+    passed('返回照片库保留分页')
+    page.locator('.video-card').first.click()
+    page.set_viewport_size({'width':390,'height':844})
+    page.wait_for_function('document.querySelector(".photo-canvas img")?.naturalWidth > 0')
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile overflow'
+    page.screenshot(path=str(OUT/'photo-mobile.png'),full_page=True)
+    page.get_by_role('button',name='管理照片',exact=True).click()
+    page.get_by_role('button',name='重命名',exact=True).click()
+    expect(page.get_by_role('dialog')).to_be_visible()
+    expect(page.get_by_role('dialog')).to_contain_text('重命名照片')
+    page.get_by_role('button',name='取消',exact=True).click()
+    page.get_by_role('button',name='移除收录',exact=True).click()
+    expect(page.get_by_role('dialog')).to_contain_text('移除照片收录')
+    page.get_by_role('button',name='确认移除收录',exact=True).click()
+    expect(page).to_have_url(base+'/photos?page=2')
+    expect(page.locator('.video-card')).to_have_count(2)
+    passed('手机布局、重命名弹窗及移除收录')
+    page.get_by_role('button',name='第 1 页',exact=True).click()
+    expect(page.locator('.video-card')).to_have_count(24)
+    page.screenshot(path=str(OUT/'photo-library-mobile.png'),full_page=True)
+    assert not errors,errors
+    assert not forbidden,forbidden
+    passed('无页面异常，无照片触发视频处理请求')
+    (OUT/'result.json').write_text(json.dumps({'checks':checks,'errors':errors,'forbidden':forbidden},ensure_ascii=False,indent=2))
+    browser.close()

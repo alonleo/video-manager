@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { access, readFile, writeFile } from "node:fs/promises";
+const { chromium } = await import("/home/leo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs");
+const fixture = JSON.parse(await readFile(".run/source-deletion-audit-latest.json", "utf8"));
+const base = "http://127.0.0.1:" + fixture.port;
+const browser = await chromium.launch({headless:true, executablePath:"/usr/bin/google-chrome"});
+const page = await browser.newPage({viewport:{width:1440,height:1050}});
+const errors = [], checks = [];
+page.on("pageerror",error=>errors.push(error.message));
+const pass = name => {checks.push(name);console.log("PASS",name);};
+const dialog = page.getByRole("dialog",{name:"删除磁盘源文件？",exact:true});
+const trigger = page.getByRole("button",{name:"删除源文件",exact:true});
+try {
+  await page.goto(base+"/videos/1");
+  await trigger.click();
+  await dialog.locator(".delete-source-path").filter({hasText:fixture.paths[0]}).waitFor();
+  assert.equal(await dialog.getByRole("button",{name:"永久删除文件",exact:true}).isDisabled(),true);
+  assert.equal(await dialog.getByRole("checkbox").isChecked(),false);
+  await dialog.getByRole("button",{name:"取消",exact:true}).click();
+  await access(fixture.paths[0]);
+  pass("默认未勾选，取消删除不改变磁盘文件");
+
+  await trigger.click();
+  await dialog.locator(".delete-source-path").filter({hasText:fixture.paths[0]}).waitFor();
+  await dialog.screenshot({path:fixture.work+"/delete-desktop.png"});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth && el.getBoundingClientRect().right<=innerWidth),true);
+  await dialog.screenshot({path:fixture.work+"/delete-mobile.png"});
+  pass("完整路径、大小和影响清楚显示，手机弹窗无横向溢出");
+
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByLabel("要删除的本地来源").selectOption("2");
+  await page.waitForFunction(()=>!document.querySelector('dialog input[type="checkbox"]')?.checked);
+  await dialog.locator(".delete-source-path").filter({hasText:fixture.paths[1]}).waitFor();
+  assert.equal(await dialog.getByRole("button",{name:"永久删除文件",exact:true}).isDisabled(),true);
+  await dialog.getByLabel("要删除的本地来源").selectOption("1");
+  await dialog.locator(".delete-source-path").filter({hasText:fixture.paths[0]}).waitFor();
+  await dialog.getByRole("checkbox").check();
+  const firstResponse = page.waitForResponse(r=>r.url().endsWith("/sources/1/deletion")&&r.request().method()==="POST");
+  await dialog.getByRole("button",{name:"永久删除文件",exact:true}).click();
+  assert.equal((await firstResponse).status(),200);
+  await dialog.waitFor({state:"hidden"});
+  await assert.rejects(access(fixture.paths[0]));
+  await access(fixture.paths[1]);
+  const detail = await (await page.request.get(base+"/api/videos/1")).json();
+  assert.equal(detail.sources.length,1);
+  assert.equal(detail.is_favorite,true);
+  pass("切换来源需重新确认，实际删除仅影响所选文件，其他来源保留");
+
+  await trigger.click();
+  await dialog.getByText(/这是最后一个来源/).waitFor();
+  await dialog.getByRole("checkbox").check();
+  const secondResponse = page.waitForResponse(r=>r.url().endsWith("/sources/2/deletion")&&r.request().method()==="POST");
+  await dialog.getByRole("button",{name:"永久删除文件",exact:true}).click();
+  assert.equal((await secondResponse).status(),200);
+  await page.waitForURL(base+"/");
+  await assert.rejects(access(fixture.paths[1]));
+  assert.equal((await page.request.get(base+"/api/videos/1")).status(),404);
+  await access(fixture.paths[0].replace("first.mp4","first.srt"));
+  pass("删除最后一个来源后返回影像库并移除收录，同目录字幕文件保留");
+
+  await page.goto(base+"/videos/2");
+  await page.getByRole("button",{name:"移除收录",exact:true}).click();
+  await page.getByRole("button",{name:"确认移除收录",exact:true}).click();
+  await page.waitForURL(base+"/");
+  await access(fixture.paths[2]);
+  assert.deepEqual(errors,[]);
+  pass("原有移除收录仍保留原文件，浏览器无脚本异常");
+  await writeFile(fixture.work+"/results.json",JSON.stringify({checks,errors},null,2));
+} finally {await browser.close();}

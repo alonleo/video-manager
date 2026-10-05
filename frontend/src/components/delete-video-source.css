@@ -1,0 +1,15 @@
+.delete-source-trigger { color: #8c4433; }
+.delete-source-title { margin: 0 0 12px; font-weight: 600; overflow-wrap: anywhere; }
+.delete-source-warning { color: #8c4433; line-height: 1.8; margin: 0 0 20px; }
+.delete-source-details { margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.delete-source-path { margin: 0 0 8px; font-size: 12px; overflow-wrap: anywhere; }
+.delete-source-dialog .directory-help { line-height: 1.8; }
+.delete-source-dialog .delete-source-confirmation { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.8; }
+.delete-source-confirmation input { flex: none; width: 17px; height: 17px; margin-top: 3px; accent-color: #8c4433; }
+.delete-source-submit { background: #8c4433; border-color: #8c4433; color: #fff; }
+.delete-source-submit:hover { background: #763728; border-color: #763728; }
+.delete-source-notice { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .delete-source-dialog .directory-dialog-heading h2 { font-size: 22px; }
+  .delete-source-dialog .directory-dialog-actions { flex-wrap: wrap; }
+}

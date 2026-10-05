@@ -1,0 +1,26 @@
+.directory-filter { margin: 18px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: #f0f1e9; }
+.directory-filter-row { display: flex; align-items: center; gap: 12px; }
+.directory-filter-label { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; }
+.directory-filter-label select { min-width: 0; flex: 1; width: auto; }
+.directory-help { color: var(--muted); font-size: 12px; line-height: 1.8; margin: 9px 0 0; }
+.directory-dialog { color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 26px; width: min(580px, calc(100vw - 28px)); max-height: calc(100dvh - 36px); overflow: auto; box-shadow: 0 24px 100px #10201644; }
+.directory-dialog::backdrop { background: #16251fd0; backdrop-filter: blur(4px); }
+.directory-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.directory-dialog-heading h2 { margin: 8px 0 0; font: 600 26px var(--serif); }
+.directory-dialog form { display: flex; flex-direction: column; gap: 18px; margin-top: 22px; }
+.directory-dialog label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600; }
+.directory-dialog select { text-overflow: ellipsis; }
+.directory-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; }
+.directory-path { margin: 0; border-left: 3px solid var(--accent); padding: 10px 14px; background: #e9ebdf; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+.directory-notice { color: #2c553c; font-size: 13px; line-height: 1.7; margin: 8px 0 0; }
+.directory-move-control { position: relative; }
+.directory-move-notice { position: absolute; right: 0; top: 100%; width: min(320px, 80vw); padding: 12px; background: #edf1e4; border: 1px solid var(--line); border-radius: 8px; z-index: 5; font-size: 12px; line-height: 1.7; box-shadow: 0 4px 16px #24372f20; }
+.video-directory-label { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; margin-top: 9px; }
+.video-directory-label span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .directory-filter { padding: 13px; }
+  .directory-filter-row { flex-wrap: wrap; gap: 9px; }
+  .directory-filter-label { flex-basis: calc(100% - 32px); }
+  .directory-filter-label select { max-width: calc(100% - 70px); }
+  .directory-dialog { padding: 20px; }
+}

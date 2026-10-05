@@ -1,0 +1,12 @@
+.conversion-settings fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 16px; min-width: 0; }
+.conversion-help { color: var(--muted); font-size: 12px; line-height: 1.8; margin: 0; }
+.conversion-track-picker { border: 1px solid var(--line); padding: 16px; border-radius: 10px; background: #f2f3eb; display: grid; gap: 12px; }
+.conversion-track-picker > strong { font-size: 13px; }
+.conversion-track, .conversion-replace-option { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.7; }
+.conversion-track input, .conversion-replace-option input { width: 17px; height: 17px; margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.conversion-track small, .conversion-replace-option small, .conversion-target small { display: block; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.conversion-track:has(input:disabled) { opacity: .65; }
+.conversion-replace-option { padding-top: 6px; }
+.conversion-target { margin: 0; font-size: 12px; padding: 12px 14px; border-left: 3px solid var(--accent); background: #eceee1; line-height: 1.8; overflow-wrap: anywhere; }
+.conversion-target span { display: block; font-family: monospace; }
+.conversion-backup { width: 100%; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }

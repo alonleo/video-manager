@@ -1,0 +1,60 @@
+{
+  "binary_release": "v0.2.0",
+  "models_release": "v0.2.5.0",
+  "model_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+  "model_archive_sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+  "files": {
+    "README.md": {
+      "size": 6052,
+      "sha256": "b7e6d9b329d057aba2dee56bf6fa8bdb7b79e90df959b39b92ed2873255f028b"
+    },
+    "realesrgan-ncnn-vulkan": {
+      "size": 11399776,
+      "sha256": "22c2296a39b40cc43ac92615c827ab6d4b60b7142e8cee59f718e3f8e2cdbda9"
+    },
+    "LICENSE": {
+      "size": 2228,
+      "sha256": "5abb941454de437b0e90d78dcb72e3688f74e14bcd4e24393273cb5cd0e9c937"
+    },
+    "models/realesr-animevideov3-x4.param": {
+      "size": 3077,
+      "sha256": "850a248e7c14c27e5bd8cf7265113a9441036a7db63963bb8aa5169d788a435e"
+    },
+    "models/realesrgan-x4plus.param": {
+      "size": 116029,
+      "sha256": "35330ececcea33b6c397a72548e788d5d53becee4734c50b7fada36e89f10a86"
+    },
+    "models/realesr-animevideov3-x4.bin": {
+      "size": 1247368,
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"
+    },
+    "models/realesrgan-x4plus-anime.param": {
+      "size": 30290,
+      "sha256": "2b8fb6e0ae4d2d85704ca08c119a2f5ea40add4f2ecd512eb7f4cd44b6127ed4"
+    },
+    "models/realesrgan-x4plus.bin": {
+      "size": 33424520,
+      "sha256": "713ee713b0353afaa27976f0563a64a5043bd70b9bd8936c2e26e25ebcdbcddf"
+    },
+    "models/realesrgan-x4plus-anime.bin": {
+      "size": 8943500,
+      "sha256": "fe01c269cfd10cdef8e018ab66ebe750cf79c7af4d1f9c16c737e1295229bacc"
+    },
+    "models/realesr-animevideov3-x3.bin": {
+      "size": 1247368,
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"
+    },
+    "models/realesr-animevideov3-x3.param": {
+      "size": 3173,
+      "sha256": "d1a5755008791d09b57e3425fc9dd0bd26b00fdf79c606210bc0e693f8230881"
+    },
+    "models/realesr-animevideov3-x2.bin": {
+      "size": 1247368,
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"
+    },
+    "models/realesr-animevideov3-x2.param": {
+      "size": 3173,
+      "sha256": "b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04"
+    }
+  }
+}

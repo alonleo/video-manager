@@ -1,0 +1,250 @@
+.enhancement-dialog {
+  width: min(780px, calc(100vw - 28px));
+  max-height: calc(100dvh - 36px);
+}
+.enhancement-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.enhancement-source-summary {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: #f0f2e9;
+  border: 1px solid #dde2d4;
+  border-radius: 10px;
+  padding: 13px 15px;
+  margin: 4px 0 20px;
+}
+.enhancement-source-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.enhancement-source-summary strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.enhancement-source-summary span {
+  color: #5d6957;
+  font-size: 11px;
+}
+.enhancement-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.enhancement-field {
+  display: flex !important;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 17px !important;
+}
+.enhancement-field small {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: #5d6957;
+}
+.enhancement-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 19px;
+}
+.enhancement-mode button {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid #d8ddcf;
+  background: #fffef9;
+  padding: 13px 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #24372f;
+}
+.enhancement-mode button.selected {
+  border-color: #617650;
+  background: #eef1e5;
+  box-shadow: inset 0 0 0 1px #617650;
+}
+.enhancement-mode strong {
+  font-size: 13px;
+}
+.enhancement-mode span {
+  font-size: 11px;
+  color: #5d6957;
+}
+.enhancement-quality-note {
+  border-radius: 9px;
+  padding: 11px 13px;
+  background: #f4f3ec;
+  align-self: start;
+}
+.enhancement-quality-note strong {
+  font-size: 12px;
+}
+.enhancement-advanced {
+  border-top: 1px solid #dddfd5;
+  border-bottom: 1px solid #dddfd5;
+  padding: 12px 0;
+  margin: 0 0 16px;
+}
+.enhancement-advanced summary,
+.enhancement-preview-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #405634;
+}
+.enhancement-advanced[open] summary {
+  margin-bottom: 16px;
+}
+.enhancement-preview-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 1px 0 16px;
+}
+.enhancement-preview-controls .enhancement-field {
+  max-width: 180px;
+  margin: 0 !important;
+}
+.enhancement-preview-controls > button {
+  min-height: 40px;
+}
+.enhancement-preview-status {
+  padding: 15px;
+  border: 1px solid #cdd6c1;
+  background: #f6f7f0;
+  border-radius: 11px;
+  margin: 0 0 16px;
+}
+.enhancement-job-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+.enhancement-job-title strong,
+.enhancement-job-title h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.enhancement-job-title > span {
+  color: #5d6957;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.enhancement-estimate {
+  padding: 13px 0 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  font-size: 11px;
+  color: #5d6957;
+}
+.enhancement-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+}
+.enhancement-comparison figure {
+  margin: 0;
+  min-width: 0;
+}
+.enhancement-comparison figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.enhancement-comparison figcaption span {
+  font-size: 10px;
+  color: #5d6957;
+  font-weight: 400;
+}
+.enhancement-comparison video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: #15271e;
+  border-radius: 7px;
+  object-fit: contain;
+}
+.enhancement-comparison-wrap > button {
+  font-size: 11px;
+}
+.enhancement-output {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 11px;
+  color: #5d6957;
+}
+.enhancement-output > span {
+  opacity: 0.6;
+}
+.enhancement-result {
+  width: 100%;
+}
+.enhancement-result > .task-progress { margin: 12px 0; }
+.enhancement-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.enhancement-result-actions :is(button, a) {
+  min-height: 36px;
+  font-size: 11px;
+}
+.enhancement-history {
+  padding: 16px 18px;
+}
+.enhancement-history-item {
+  border-top: 1px solid #dddfd5;
+  padding-top: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 560px) {
+  .enhancement-dialog {
+    padding: 18px 15px;
+  }
+  .enhancement-fields,
+  .enhancement-comparison {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .enhancement-comparison {
+    gap: 16px;
+  }
+  .enhancement-mode {
+    gap: 8px;
+  }
+  .enhancement-mode button {
+    padding: 11px 10px;
+  }
+  .enhancement-preview-controls {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .enhancement-preview-controls .enhancement-field {
+    max-width: 130px;
+  }
+  .enhancement-dialog .directory-dialog-actions {
+    position: static;
+    flex-wrap: wrap;
+  }
+}

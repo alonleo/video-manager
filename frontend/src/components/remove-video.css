@@ -1,0 +1,26 @@
+.video-card-item { position: relative; min-width: 0; }
+.video-remove-trigger {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 34px; padding: 6px 9px; border: 1px solid #dce0d6;
+  border-radius: 8px; background: #fafcf6; color: #4d5b48;
+  font-size: 11px; box-shadow: 0 2px 8px #10220c14;
+}
+.video-remove-trigger:hover { background: #fff1ed; color: #91402d; border-color: #dfb6aa; }
+.video-remove-trigger:focus-visible { outline: 2px solid #435c35; outline-offset: 3px; }
+.video-remove-action { color: #805344; }
+.video-list .video-card { padding-right: 104px; }
+.video-list .video-remove-trigger { top: 50%; right: 4px; transform: translateY(-50%); }
+.remove-video-title { font-weight: 600; overflow-wrap: anywhere; margin: 0 0 12px; }
+.remove-video-dialog .directory-help { line-height: 1.9; }
+.remove-video-confirm { background: #8c4433; border-color: #8c4433; color: #fff; }
+.remove-video-confirm:hover { background: #763728; border-color: #763728; }
+@media (max-width: 600px) {
+  .video-remove-trigger { min-width: 34px; padding: 7px; }
+  .video-remove-trigger span { display: none; }
+  .video-list .video-card { padding-right: 44px; }
+}
+
+@media (max-width: 600px) {
+  .remove-video-dialog .directory-dialog-heading h2 { font-size: 22px; }
+}

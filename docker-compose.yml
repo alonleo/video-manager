@@ -1,0 +1,54 @@
+# 本项目独占的依赖服务。
+#
+#   docker compose up -d
+#   docker compose ps
+#
+# 为什么 Redis 要另起一个而不是用系统的 6379：
+#   系统实例有 requirepass 认证，而本项目仅本机使用，独立实例更干净，
+#   也避免误连到别人的库（key 冲突）。用 6399 端口避让。
+#
+# PostgreSQL 已确认不使用 —— 数据落 SQLite（data/video_manage.db）。
+
+services:
+  redis:
+    image: redis:8-alpine
+    container_name: video-manage-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6399:6379"
+    command: >
+      redis-server
+      --save 60 1
+      --appendonly no
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    volumes:
+      - ./docker/redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  openlist:
+    image: openlistteam/openlist:latest
+    container_name: video-manage-openlist
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5244:5244"
+    volumes:
+      - ./docker/openlist/data:/opt/openlist/data
+      # 如需让 OpenList 也直接看到本地磁盘，取消注释并改成你的路径
+      # - /mnt/videos:/mnt/videos:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5244/api/public/settings"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s

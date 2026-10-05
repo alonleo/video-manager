@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+const root=path.resolve(import.meta.dirname,'..');
+const out=path.join(root,'.run/tag-validation');
+const base=process.env.TAG_AUDIT_URL||'http://127.0.0.1:18423';
+const json=async(url,init)=>{const r=await fetch(base+url,init);assert.ok(r.ok,await r.clone().text());return r.status===204?null:r.json();};
+const health=await json('/api/health');
+assert.ok(health.detail?.database_url?.includes('/.run/tag-validation/'),'Only isolated databases may be mutated');
+const ids=JSON.parse(await readFile(path.join(out,'fixtures.json'),'utf8'));
+const originals=await Promise.all(ids.videos.map(id=>readFile(path.join(out,'media',id+'.mp4'))));
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/usr/bin/google-chrome'});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const report={checks:[],errors:[],accessibility:[]};
+page.on('pageerror',e=>report.errors.push(e.message));
+const check=(ok,name)=>{assert.ok(ok,name);report.checks.push(name);console.log('PASS',name);};
+const axe=await readFile(path.join(root,'.run/design-audit/tooling/node_modules/axe-core/axe.min.js'),'utf8');
+async function a11y(name){
+ await page.addScriptTag({content:axe});
+ const result=await page.evaluate(async()=>window.axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}));
+ const violations=result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.failureSummary)}));
+ report.accessibility.push({name,violations});check(!violations.length,name+': accessibility');
+}
+const dialog=page.getByRole('dialog');
+const targetButton=()=>dialog.getByRole('button',{name:'删除标签「测试」',exact:true});
+try{
+ await page.goto(base+'/?tag='+encodeURIComponent('测试')+'&view=list&sort=title');
+ await page.getByRole('button',{name:'管理标签',exact:true}).click();
+ await targetButton().waitFor();
+ check(await dialog.locator('li').filter({hasText:'测试'}).getByText('2 个视频',{exact:true}).isVisible(),'Tag usage count is visible');
+ check(await dialog.locator('li').filter({hasText:'未使用'}).getByText('0 个视频',{exact:true}).isVisible(),'Unused tags remain manageable');
+ await a11y('Tag manager desktop');
+ await page.screenshot({path:path.join(out,'tag-manager-desktop.png'),fullPage:true,animations:'disabled'});
+ await dialog.getByRole('searchbox',{name:'搜索标签'}).fill('测试');
+ check(await dialog.locator('li').count()===1,'Search filters tags');
+ await targetButton().click();
+ check(await dialog.getByText('2 个视频正在使用',{exact:true}).isVisible(),'Confirmation states the affected video count');
+ check(await dialog.getByRole('button',{name:'取消',exact:true}).evaluate(el=>el===document.activeElement),'Confirmation focuses cancel by default');
+ await dialog.getByRole('button',{name:'取消',exact:true}).click();
+ check((await json('/api/tags')).some(t=>t.id===ids.target),'Cancel preserves the tag');
+ await page.keyboard.press('Escape');
+ await dialog.waitFor({state:'hidden'});
+ check(await page.getByRole('button',{name:'管理标签',exact:true}).evaluate(el=>el===document.activeElement),'Escape closes dialog and restores focus');
+ await page.getByRole('button',{name:'管理标签',exact:true}).click();
+ await targetButton().click();
+ // Another change occurs after confirmation was opened.
+ await json('/api/videos/'+ids.videos[0]+'/tags/'+ids.target,{method:'DELETE'});
+ await dialog.getByRole('button',{name:'确认删除标签',exact:true}).click();
+ await dialog.getByRole('alert').filter({hasText:'数量已变化'}).waitFor();
+ check((await json('/api/tags')).some(t=>t.id===ids.target),'Changed usage requires confirmation again');
+ await json('/api/videos/'+ids.videos[0]+'/tags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'测试'})});
+ await dialog.getByRole('button',{name:'关闭标签管理'}).click();
+ await page.getByRole('button',{name:'管理标签',exact:true}).click();
+ await page.waitForFunction(()=>[...document.querySelectorAll('.tag-manager-list li')].some(el=>el.textContent.includes('测试')&&el.textContent.includes('2 个视频')));
+ await targetButton().click();
+ await page.setViewportSize({width:390,height:844});
+ check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Manager fits mobile');
+ await a11y('Delete confirmation mobile');
+ await page.screenshot({path:path.join(out,'tag-delete-mobile.png'),fullPage:true,animations:'disabled'});
+ await page.route('**/api/tags/'+ids.target+'?*',r=>r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'临时错误，请重试'})}),{times:1});
+ await dialog.getByRole('button',{name:'确认删除标签',exact:true}).click();
+ await dialog.getByRole('alert').filter({hasText:'临时错误'}).waitFor();
+ check((await json('/api/tags')).some(t=>t.id===ids.target),'Failed deletion preserves tag and shows retryable error');
+ await dialog.getByRole('button',{name:'确认删除标签',exact:true}).click();
+ await dialog.getByRole('status').filter({hasText:'已删除标签「测试」'}).waitFor();
+ check(!(await json('/api/tags')).some(t=>t.id===ids.target),'Global tag is removed after confirmation');
+ check(new URL(page.url()).searchParams.get('tag')===null,'Deleted active tag filter is cleared');
+ check(new URL(page.url()).searchParams.get('view')==='list'&&new URL(page.url()).searchParams.get('sort')==='title','Other filters and view are preserved');
+ for(const id of ids.videos){
+   const v=await json('/api/videos/'+id);
+   check(v.id===id&&!v.tags.some(t=>t.id===ids.target),'Video '+id+' remains and its tag association is removed');
+ }
+ const first=await json('/api/videos/'+ids.videos[0]);
+ check(first.tags.some(t=>t.id===ids.keep),'Other tags remain attached');
+ check((await json('/api/videos/'+ids.videos[0]+'/progress')).position_ms===4000,'Watch progress is preserved');
+ for(let i=0;i<ids.videos.length;i++)assert.deepEqual(await readFile(path.join(out,'media',ids.videos[i]+'.mp4')),originals[i]);
+ check(true,'Original video files are untouched');
+ await dialog.getByRole('button',{name:'删除标签「未使用」',exact:true}).click();
+ await dialog.getByRole('button',{name:'确认删除标签',exact:true}).click();
+ await dialog.getByRole('status').filter({hasText:'已删除标签「未使用」'}).waitFor();
+ check(!(await json('/api/tags')).some(t=>t.id===ids.unused),'Unused tag can be deleted');
+ await dialog.getByRole('button',{name:'删除标签「保留」',exact:true}).click();
+ await dialog.getByRole('button',{name:'确认删除标签',exact:true}).click();
+ await dialog.getByText('标签库为空。可在视频播放页添加标签。',{exact:true}).waitFor();
+ check((await json('/api/tags')).length===0,'Deleting the last tag shows a useful empty state');
+ await a11y('Empty tag manager mobile');
+ await dialog.getByRole('button',{name:'关闭标签管理'}).click();
+ await page.reload();
+ check(await page.getByRole('button',{name:'管理标签',exact:true}).isVisible(),'Manager remains accessible with no tags');
+ check((await json('/api/videos')).total===2,'Deleting all tags does not delete any video');
+ check(!report.errors.length,'No uncaught browser exceptions');
+}catch(error){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});report.failure=error.stack;console.error(error);process.exitCode=1;}
+finally{await writeFile(path.join(out,'browser-results.json'),JSON.stringify(report,null,2));await browser.close();console.log('Checks:',report.checks.length);}

@@ -1,0 +1,41 @@
+# 环境与密钥
+.env
+*.key
+
+# 运行时产物（视频本体绝不入库，这些是可重建的中间产物）
+/cache/
+/work/
+/downloads/
+/data/covers/*
+/data/thumbs/*
+/data/photos/
+/data/models/
+/data/*.lock
+/data/*.db*
+!/data/covers/.gitkeep
+!/data/thumbs/.gitkeep
+
+# 本地服务数据
+/docker/*/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+.run/
+.ruff_cache/
+*.tsbuildinfo
+*.orig

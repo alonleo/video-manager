@@ -1,0 +1,26 @@
+.settings-video-results .settings-video-row { align-items: center; padding: 16px; }
+.settings-video-row > svg { flex-shrink: 0; color: #8b745f; }
+.settings-video-main { display: flex; flex: 1; flex-direction: column; gap: 11px; min-width: 0; }
+.settings-video-title { font-size: 13px; font-weight: 600; line-height: 1.6; }
+.subtitle-status-summary { display: flex; flex-direction: column; gap: 8px; min-width: 0; text-align: left; }
+.subtitle-status-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; }
+.subtitle-status-task { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.subtitle-status-task .task-progress { grid-template-columns: minmax(70px, 1fr) auto; }
+.subtitle-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 11px; }
+.subtitle-status-label { color: var(--muted); white-space: nowrap; }
+.subtitle-status-pill { padding: 3px 8px; border-radius: 5px; background: #e9eae4; color: #5e685a; font-size: 11px; font-weight: 500; line-height: 1.5; }
+.subtitle-status-pill[data-state="done"], .subtitle-status-pill[data-state="imported"] { background: #e1eddf; color: #3c643a; }
+.subtitle-status-pill[data-state="queued"] { background: #f5e8cc; color: #7e5b21; }
+.subtitle-status-pill[data-state="running"] { background: #dceaf1; color: #2e6078; }
+.subtitle-status-pill[data-state="error"] { background: #f8e2db; color: #963f2b; }
+.subtitle-status-pill[data-state="missing"], .subtitle-status-pill[data-state="canceled"] { background: #eee7df; color: #7b6250; }
+.subtitle-status-note, .subtitle-status-counts, .subtitle-status-extra, .subtitle-status-placeholder { color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.subtitle-status-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.subtitle-status-counts { padding-top: 2px; }
+.settings-selected-status { padding: 15px 0 2px; }
+.settings-subtitle-status-help { color: var(--muted); font-size: 11px; line-height: 1.8; margin: -5px 0 16px; }
+.settings-subtitle-status-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; color: #963f2b; font-size: 12px; }
+@media (max-width: 600px) {
+  .subtitle-status-pair { grid-template-columns: 1fr; gap: 8px; }
+  .settings-video-results .settings-video-row { padding: 13px 11px; gap: 8px; }
+}
