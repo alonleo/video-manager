@@ -493,6 +493,19 @@ class DeviceAuthApiTest {
     }
 
     @Test
+    fun waitForApprovalStopsBeforeChallengeAuthentication() = runTest {
+        val fixture = repositoryFixture(PairingStatus.Approved)
+        val pending = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+
+        val approved = fixture.repository.waitForApproval(pending)
+
+        assertNull(approved.pending)
+        assertEquals(approved, fixture.store.value)
+        assertEquals(0, fixture.api.challengeCalls)
+        assertEquals(0, fixture.api.verifyCalls)
+    }
+
+    @Test
     fun rejectedPairingClearsIdentityAndKey() = runTest {
         val fixture = repositoryFixture(PairingStatus.Rejected)
         val identity = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
@@ -943,6 +956,8 @@ class DeviceAuthApiTest {
         var requestError: Throwable? = null
         var statusError: Throwable? = null
         var statusCalls = 0
+        var challengeCalls = 0
+        var verifyCalls = 0
         var verifyEntered: CountDownLatch? = null
         var releaseVerify: CountDownLatch? = null
 
@@ -955,8 +970,12 @@ class DeviceAuthApiTest {
             statusError?.let { throw it }
             return statuses.removeFirst()
         }
-        override suspend fun challenge(deviceId: Long): String = challengeValue
+        override suspend fun challenge(deviceId: Long): String {
+            challengeCalls += 1
+            return challengeValue
+        }
         override suspend fun verify(deviceId: Long, challenge: String, signature: ByteArray): AuthSession {
+            verifyCalls += 1
             verifiedSignature = signature
             verifyEntered?.countDown()
             releaseVerify?.let {

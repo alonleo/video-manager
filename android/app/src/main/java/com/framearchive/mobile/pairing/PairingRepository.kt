@@ -22,6 +22,7 @@ import java.util.UUID
 interface PairingCoordinator {
     fun storedIdentity(): DeviceIdentity?
     suspend fun submit(link: PairingLink, name: String): DeviceIdentity
+    suspend fun waitForApproval(identity: DeviceIdentity): DeviceIdentity
     suspend fun awaitApproval(identity: DeviceIdentity): AuthSession
     suspend fun authenticate(identity: DeviceIdentity): AuthSession
     suspend fun resume(identity: DeviceIdentity): AuthSession
@@ -104,7 +105,7 @@ class PairingRepository internal constructor(
         }
     }
 
-    override suspend fun awaitApproval(identity: DeviceIdentity): AuthSession {
+    override suspend fun waitForApproval(identity: DeviceIdentity): DeviceIdentity {
         identity.pending
             ?: throw IllegalArgumentException("Device identity is not awaiting approval")
         val api = apiFactory.create(identity.serverOrigin)
@@ -127,10 +128,7 @@ class PairingRepository internal constructor(
             }
             when (status) {
                 PairingStatus.Pending -> pollDelay(POLL_INTERVAL_MILLIS)
-                PairingStatus.Approved -> {
-                    val approved = approvePendingOrThrowStale(identity)
-                    return authenticate(approved)
-                }
+                PairingStatus.Approved -> return approvePendingOrThrowStale(identity)
                 PairingStatus.Rejected -> {
                     val rejected = PairingRejected()
                     clearPendingOrThrowStale(identity, rejected)
@@ -144,6 +142,9 @@ class PairingRepository internal constructor(
             }
         }
     }
+
+    override suspend fun awaitApproval(identity: DeviceIdentity): AuthSession =
+        authenticate(waitForApproval(identity))
 
     override suspend fun authenticate(identity: DeviceIdentity): AuthSession {
         val expected = currentApproved(identity)
