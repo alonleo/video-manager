@@ -55,6 +55,39 @@ class PairingLinkTest {
     }
 
     @Test
+    fun `canonicalizes expanded IPv6 loopback and removes the default port`() {
+        assertOrigin("https://[0:0:0:0:0:0:0:1]:443/", "https://[::1]")
+    }
+
+    @Test
+    fun `canonicalizes expanded ULA and link-local IPv6 with lowercase hex`() {
+        assertOrigin(
+            "http://[FD12:0000:0000:0000:0000:0000:0000:0001]:8080/",
+            "http://[fd12::1]:8080",
+        )
+        assertOrigin(
+            "http://[FE80:0000:0000:0000:0000:0000:ABCD:0001]/",
+            "http://[fe80::abcd:1]",
+        )
+    }
+
+    @Test
+    fun `compresses the leftmost longest IPv6 zero run`() {
+        assertOrigin(
+            "https://[2001:0000:0000:0001:0000:0000:0001:0001]:8443",
+            "https://[2001::1:0:0:1:1]:8443",
+        )
+    }
+
+    @Test
+    fun `does not compress a single IPv6 zero word`() {
+        assertOrigin(
+            "https://[2001:0DB8:0000:0001:0002:0003:0004:0005]",
+            "https://[2001:db8:0:1:2:3:4:5]",
+        )
+    }
+
+    @Test
     fun `rejects disallowed and IPv4-mapped IPv6 over HTTP`() {
         listOf(
             "http://[fec0::1]",

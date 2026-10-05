@@ -147,7 +147,11 @@ internal object TrustedServerOrigin {
             throw InvalidPairingLink("HTTP 服务器必须位于允许的本地网络")
         }
 
-        val normalizedHost = if (isIpv6) "[$host]" else host
+        val normalizedHost = if (isIpv6) {
+            "[${canonicalizeIpv6(parseIpv6(host)!!)}]"
+        } else {
+            host
+        }
         val normalizedPort = when {
             port == -1 -> ""
             scheme == "http" && port == 80 -> ""
@@ -262,5 +266,39 @@ internal object TrustedServerOrigin {
             }
         }
         return words
+    }
+
+    private fun canonicalizeIpv6(bytes: IntArray): String {
+        val words = IntArray(8) { index -> bytes[index * 2] * 256 + bytes[index * 2 + 1] }
+        var longestStart = -1
+        var longestLength = 0
+        var index = 0
+        while (index < words.size) {
+            if (words[index] != 0) {
+                index++
+                continue
+            }
+            val start = index
+            while (index < words.size && words[index] == 0) index++
+            val length = index - start
+            if (length >= 2 && length > longestLength) {
+                longestStart = start
+                longestLength = length
+            }
+        }
+
+        return buildString {
+            index = 0
+            while (index < words.size) {
+                if (index == longestStart) {
+                    append("::")
+                    index += longestLength
+                    continue
+                }
+                if (isNotEmpty() && last() != ':') append(':')
+                append(words[index].toString(16))
+                index++
+            }
+        }
     }
 }
