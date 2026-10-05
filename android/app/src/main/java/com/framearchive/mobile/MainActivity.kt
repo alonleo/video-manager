@@ -2,13 +2,8 @@ package com.framearchive.mobile
 
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
@@ -24,6 +19,7 @@ import com.framearchive.mobile.databinding.ActivityMainBinding
 import com.framearchive.mobile.databinding.ViewApprovalBinding
 import com.framearchive.mobile.databinding.ViewBrowserBinding
 import com.framearchive.mobile.databinding.ViewPairingBinding
+import com.framearchive.mobile.databinding.ViewStatusBinding
 import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.EncryptedIdentityStore
 import com.framearchive.mobile.ui.AppState
@@ -134,7 +130,7 @@ class MainActivity : AppCompatActivity() {
         val browser = ViewBrowserBinding.inflate(layoutInflater, binding.content, false)
         browser.serverOrigin.text = state.serverOrigin
         browser.reauthenticateButton.setOnClickListener { viewModel.reauthenticate() }
-        binding.content.addView(browser.root)
+        showContent(browser.root, animate = false)
         browserBinding = browser
         browserOpen = try {
             webSessionBridge.open(browser.webView, state.serverOrigin, state.cookieHeader)
@@ -183,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         }
         pairing.scanButton.setOnClickListener { launchScanner() }
         pairing.submitButton.setOnClickListener { viewModel.submit() }
-        binding.content.addView(pairing.root)
+        showContent(pairing.root)
     }
 
     private fun renderApproval(state: AppState.AwaitingApproval) {
@@ -193,7 +189,7 @@ class MainActivity : AppCompatActivity() {
         approval.serverHost.text = details?.serverHost ?: getString(R.string.unknown_server)
         approval.deviceName.text = details?.deviceName ?: viewModel.pairingDraft.value.deviceName
         approval.cancelButton.setOnClickListener { viewModel.cancelPairing() }
-        binding.content.addView(approval.root)
+        showContent(approval.root)
         countdownJob = lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
@@ -211,49 +207,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderProgress(message: String) {
-        val container = statusContainer()
-        container.addView(ProgressBar(this))
-        container.addView(statusText(message))
-        binding.content.addView(container)
-    }
-
-    private fun renderStatus(message: String) {
-        binding.content.addView(statusContainer().apply { addView(statusText(message)) })
+        val status = ViewStatusBinding.inflate(layoutInflater, binding.content, false)
+        status.statusTitle.setText(R.string.status_working)
+        status.statusMessage.text = message
+        showContent(status.root)
     }
 
     private fun renderRetryableError(message: String, canResetIdentity: Boolean) {
-        val container = statusContainer()
-        container.addView(statusText(message))
-        container.addView(Button(this).apply {
-            setText(R.string.retry)
+        val status = ViewStatusBinding.inflate(layoutInflater, binding.content, false)
+        status.progressIndicator.visibility = View.GONE
+        status.statusTitle.setText(R.string.status_error)
+        status.statusMessage.text = message
+        status.retryButton.apply {
+            visibility = View.VISIBLE
             setOnClickListener { viewModel.retry() }
-        })
-        if (canResetIdentity) {
-            container.addView(Button(this).apply {
-                setText(R.string.pair_again)
-                setOnClickListener { viewModel.abandonIdentity() }
-            })
         }
-        binding.content.addView(container)
+        status.resetButton.apply {
+            visibility = if (canResetIdentity) View.VISIBLE else View.GONE
+            setOnClickListener { viewModel.abandonIdentity() }
+        }
+        showContent(status.root)
     }
 
-    private fun statusContainer() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        val padding = resources.getDimensionPixelSize(R.dimen.screen_padding)
-        setPadding(padding, padding, padding, padding)
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.MATCH_PARENT,
-        )
-    }
-
-    private fun statusText(message: String) = TextView(this).apply {
-        text = message
-        gravity = Gravity.CENTER
-        textSize = 18f
-        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        setPadding(0, resources.getDimensionPixelSize(R.dimen.item_spacing), 0, 0)
+    private fun showContent(view: View, animate: Boolean = true) {
+        binding.content.addView(view)
+        if (!animate) return
+        view.alpha = 0f
+        view.translationY = 10f * resources.displayMetrics.density
+        view.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(240L)
+            .start()
     }
 
     private fun launchScanner() {

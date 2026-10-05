@@ -1,18 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">帧藏</string>
-    <string name="pairing_title">添加信任设备</string>
-    <string name="pairing_description">在已信任设备的“设置 → 信任设备”中生成 Android 二维码，然后扫描或粘贴配对链接。</string>
+    <string name="brand_tagline">私人影像库</string>
+    <string name="pairing_eyebrow">安全连接</string>
+    <string name="pairing_title">连接你的帧藏</string>
+    <string name="pairing_description">在已信任设备中生成 Android 配对码，用手机扫一扫即可安全进入。</string>
+    <string name="pairing_step_device">01  ·  为这台设备命名</string>
+    <string name="pairing_step_scan">02  ·  扫描配对二维码</string>
     <string name="device_name_label">设备名称</string>
-    <string name="scan_qr_code">扫描二维码</string>
+    <string name="device_name_hint">例如：客厅手机</string>
+    <string name="scan_qr_code">打开相机扫描</string>
     <string name="scan_prompt">扫描帧藏 Android 配对二维码</string>
-    <string name="or_paste_link">或手动粘贴</string>
+    <string name="or_paste_link">无法扫码？粘贴配对链接</string>
     <string name="pairing_link_label">配对链接</string>
-    <string name="submit_pairing_link">提交配对申请</string>
+    <string name="pairing_link_hint">framearchive://pair?…</string>
+    <string name="submit_pairing_link">使用此链接连接</string>
     <string name="pairing_submitting">正在提交配对申请…</string>
     <string name="pairing_authenticating">正在验证设备身份…</string>
-    <string name="waiting_for_approval">等待电脑批准</string>
-    <string name="approval_instruction">请确认电脑上显示相同验证码，然后批准此设备。</string>
+    <string name="approval_eyebrow">等待批准</string>
+    <string name="waiting_for_approval">核对这组验证码</string>
+    <string name="approval_instruction">确认电脑端显示相同数字，然后批准这台设备。</string>
+    <string name="approval_code_label">安全验证码</string>
+    <string name="approval_server_label">服务器</string>
+    <string name="approval_device_label">此设备</string>
+    <string name="approval_expires_label">有效时间</string>
     <string name="unknown_server">未知服务器</string>
     <string name="cancel_pairing">取消配对</string>
     <string name="retry">重试</string>
@@ -31,7 +42,7 @@
         <item quantity="one">剩余 %d 秒</item>
         <item quantity="other">剩余 %d 秒</item>
     </plurals>
-    <dimen name="screen_padding">24dp</dimen>
-    <dimen name="section_spacing">24dp</dimen>
-    <dimen name="item_spacing">12dp</dimen>
+    <string name="status_working">正在建立安全连接</string>
+    <string name="status_error">连接遇到问题</string>
+    <string name="browser_secure_connection">安全连接</string>
 </resources>

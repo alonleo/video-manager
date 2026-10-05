@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#071A3D</color>
+    <color name="app_background">#07111F</color>
+    <color name="app_background_deep">#050B14</color>
+    <color name="surface_primary">#101D30</color>
+    <color name="surface_pressed">#1B3150</color>
+    <color name="border_subtle">#263B59</color>
+    <color name="border_focus">#45D8E6</color>
+    <color name="text_primary">#F3F7FC</color>
+    <color name="text_secondary">#A9B7CB</color>
+    <color name="text_tertiary">#8798B0</color>
+    <color name="accent_cyan">#45D8E6</color>
+    <color name="accent_cyan_pressed">#29B9C8</color>
+    <color name="on_accent">#03151A</color>
+    <color name="error_surface">#341B28</color>
+    <color name="error_border">#7E3854</color>
+    <color name="error_text">#FFB2C8</color>
+    <color name="transparent">#00000000</color>
 </resources>

@@ -7,27 +7,59 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@drawable/bg_toolbar"
         android:gravity="center_vertical"
+        android:minHeight="64dp"
         android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/item_spacing"
-        android:paddingVertical="8dp">
+        android:paddingStart="18dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="10dp">
 
-        <TextView
-            android:id="@+id/server_origin"
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_status_dot" />
+
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
             android:layout_weight="1"
-            android:ellipsize="middle"
-            android:maxLines="1"
-            android:textAppearance="?android:attr/textAppearanceSmall"
-            android:textIsSelectable="true" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/browser_secure_connection"
+                android:textColor="@color/accent_cyan"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/server_origin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textIsSelectable="true"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/reauthenticate_button"
+            style="@style/Widget.FrameArchive.Button.Secondary"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="10dp"
             android:contentDescription="@string/reauthenticate_description"
+            android:minHeight="40dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="14dp"
             android:text="@string/reauthenticate"
+            android:textSize="13sp"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -36,10 +68,14 @@
         android:accessibilityLiveRegion="assertive"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="@dimen/item_spacing"
-        android:paddingVertical="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_error"
+        android:padding="12dp"
         android:text="@string/session_expired"
-        android:textColor="?attr/colorError"
+        android:textColor="@color/error_text"
+        android:textSize="13sp"
         android:visibility="gone" />
 
     <WebView
@@ -47,5 +83,6 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:background="@color/app_background"
         android:contentDescription="@string/browser_content_description" />
 </LinearLayout>
