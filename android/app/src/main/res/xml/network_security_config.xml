@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Android cannot express a runtime-selected private IP/CIDR here. Cleartext is enabled at
+         the transport layer, while PairingLink and TrustedOriginPolicy enforce the private,
+         explicitly paired origin and block all external HTTP navigation. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

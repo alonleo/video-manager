@@ -187,6 +187,78 @@ class MainViewModelTest {
     }
 
     @Test
+    fun hostResumeRefreshesBrowsingSessionWithoutStartingConcurrentAuthentication() = runTest(dispatcher) {
+        val approved = pendingIdentity().copy(pending = null)
+        val firstAuthentication = CompletableDeferred<AuthSession>()
+        val fake = FakeCoordinator(approved).apply { authenticationResult = firstAuthentication }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+
+        // The first onResume belongs to the fresh Activity launch; startup recovery already authenticates.
+        viewModel.onHostResumed()
+        runCurrent()
+        assertEquals(1, fake.authenticateCalls)
+        firstAuthentication.complete(AuthSession("frame_device_session=first; Path=/"))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.appState is AppState.Browsing)
+
+        val refresh = CompletableDeferred<AuthSession>()
+        fake.authenticationResult = refresh
+        viewModel.onHostResumed()
+        viewModel.onHostResumed()
+        runCurrent()
+
+        assertEquals(AppState.Authenticating, viewModel.uiState.value.appState)
+        assertEquals(2, fake.authenticateCalls)
+        refresh.complete(AuthSession("frame_device_session=refreshed; Path=/"))
+        runCurrent()
+        assertEquals(
+            AppState.Browsing(approved.serverOrigin, "frame_device_session=refreshed; Path=/"),
+            viewModel.uiState.value.appState,
+        )
+    }
+
+    @Test
+    fun explicitReauthenticationReturnsRevokedDeviceToPairing() = runTest(dispatcher) {
+        val approved = pendingIdentity().copy(pending = null)
+        val fake = FakeCoordinator(approved).apply {
+            authenticationResult = CompletableDeferred(AuthSession("frame_device_session=first; Path=/"))
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+        assertTrue(viewModel.uiState.value.appState is AppState.Browsing)
+
+        fake.authenticationResult = CompletableDeferred<AuthSession>().also {
+            it.completeExceptionally(DeviceRevoked())
+        }
+        fake.clearIdentityOnAuthFailure = true
+        viewModel.reauthenticate()
+        runCurrent()
+
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
+        assertNull(fake.identity)
+    }
+
+    @Test
+    fun reauthenticationNetworkFailureKeepsApprovedIdentityRetryable() = runTest(dispatcher) {
+        val approved = pendingIdentity().copy(pending = null)
+        val fake = FakeCoordinator(approved).apply {
+            authenticationResult = CompletableDeferred(AuthSession("frame_device_session=first; Path=/"))
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        fake.authenticationResult = CompletableDeferred<AuthSession>().also {
+            it.completeExceptionally(NetworkUnavailable(IOException("offline")))
+        }
+        viewModel.reauthenticate()
+        runCurrent()
+
+        assertEquals(AppState.RecoverableError("网络连接失败，请重试", true), viewModel.uiState.value.appState)
+        assertEquals(approved, fake.identity)
+        assertTrue(viewModel.uiState.value.canResetIdentity)
+    }
+
+    @Test
     fun submissionParsesLinkBeforeCallingRepositoryAndCanBeCancelled() = runTest(dispatcher) {
         val submitted = pendingIdentity()
         val fake = FakeCoordinator(null).apply {

@@ -17,7 +17,14 @@
     <string name="cancel_pairing">取消配对</string>
     <string name="retry">重试</string>
     <string name="pair_again">重新扫码</string>
-    <string name="browser_placeholder">设备认证成功，正在准备网站界面。</string>
+    <string name="browser_content_description">帧藏网站内容</string>
+    <string name="reauthenticate">重新认证</string>
+    <string name="reauthenticate_description">重新验证此设备并刷新登录会话</string>
+    <string name="session_expired">网站会话已失效，请重新认证。</string>
+    <string name="web_session_failed">无法打开网站，请检查网络或重新认证。</string>
+    <string name="navigation_blocked">已阻止不安全的外部链接</string>
+    <string name="external_browser_unavailable">没有可用于打开此链接的浏览器</string>
+    <string name="download_queued">下载已加入系统下载队列</string>
     <plurals name="pairing_seconds_remaining">
         <item quantity="one">剩余 %d 秒</item>
         <item quantity="other">剩余 %d 秒</item>

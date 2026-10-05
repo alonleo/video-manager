@@ -59,6 +59,7 @@ class MainViewModel(
     val pairingDraft: StateFlow<PairingDraft> = mutablePairingDraft.asStateFlow()
 
     private var operation: Job? = null
+    private var hostHasResumed = false
 
     init {
         recover()
@@ -114,6 +115,36 @@ class MainViewModel(
 
     fun retry() {
         recover()
+    }
+
+    fun onHostResumed() {
+        if (!hostHasResumed) {
+            hostHasResumed = true
+            return
+        }
+        reauthenticate()
+    }
+
+    fun reauthenticate() {
+        if (mutableUiState.value.appState !is AppState.Browsing) return
+        if (operation?.isActive == true) return
+        launchOperation {
+            val identity = try {
+                coordinator.storedIdentity()
+            } catch (error: Throwable) {
+                handleFailure(error)
+                return@launchOperation
+            }
+            try {
+                when {
+                    identity == null -> transitionTo(AppState.NeedsPairing)
+                    identity.pending != null -> awaitAndAuthenticate(identity)
+                    else -> authenticate(identity)
+                }
+            } catch (error: Throwable) {
+                handleFailure(error)
+            }
+        }
     }
 
     fun cancelPairing() {

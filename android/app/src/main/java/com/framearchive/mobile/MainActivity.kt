@@ -8,6 +8,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -19,12 +21,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.framearchive.mobile.databinding.ActivityMainBinding
 import com.framearchive.mobile.databinding.ViewApprovalBinding
+import com.framearchive.mobile.databinding.ViewBrowserBinding
 import com.framearchive.mobile.databinding.ViewPairingBinding
 import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.EncryptedIdentityStore
 import com.framearchive.mobile.ui.AppState
 import com.framearchive.mobile.ui.MainUiState
 import com.framearchive.mobile.ui.MainViewModel
+import com.framearchive.mobile.web.SessionOpen
+import com.framearchive.mobile.web.WebSessionBridge
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Job
@@ -37,6 +42,20 @@ import kotlin.math.max
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var countdownJob: Job? = null
+    private var browserBinding: ViewBrowserBinding? = null
+    private var browserOpen: SessionOpen? = null
+    private var lastBrowserOrigin: String? = null
+
+    private val webSessionBridge: WebSessionBridge by lazy {
+        WebSessionBridge(
+            context = this,
+            onBlockedNavigation = { toast(R.string.navigation_blocked) },
+            onExternalNavigationUnavailable = { toast(R.string.external_browser_unavailable) },
+            onUnauthorized = { showBrowserAuthenticationProblem(R.string.session_expired) },
+            onSessionError = { showBrowserAuthenticationProblem(R.string.web_session_failed) },
+            onDownloadQueued = { toast(R.string.download_queued) },
+        )
+    }
 
     private val viewModel: MainViewModel by viewModels {
         val coordinator = PairingRepository(
@@ -64,6 +83,16 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    val webView = browserBinding?.webView
+                    if (webView?.canGoBack() == true) webView.goBack() else finish()
+                }
+            },
+        )
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collectLatest(::render)
@@ -75,13 +104,16 @@ class MainActivity : AppCompatActivity() {
         val state = uiState.appState
         countdownJob?.cancel()
         countdownJob = null
+        if (state !is AppState.Browsing) {
+            disposeBrowser(clearSession = state == AppState.NeedsPairing)
+        }
         binding.content.removeAllViews()
         when (state) {
             AppState.NeedsPairing -> renderPairing()
             AppState.Submitting -> renderProgress(getString(R.string.pairing_submitting))
             is AppState.AwaitingApproval -> renderApproval(state)
             AppState.Authenticating -> renderProgress(getString(R.string.pairing_authenticating))
-            is AppState.Browsing -> renderStatus(getString(R.string.browser_placeholder))
+            is AppState.Browsing -> renderBrowser(state)
             is AppState.RecoverableError -> {
                 if (state.canRetry) {
                     renderRetryableError(state.message, uiState.canResetIdentity)
@@ -89,6 +121,45 @@ class MainActivity : AppCompatActivity() {
                     renderPairing(state.message)
                 }
             }
+        }
+    }
+
+    private fun renderBrowser(state: AppState.Browsing) {
+        disposeBrowser(clearSession = false)
+        val browser = ViewBrowserBinding.inflate(layoutInflater, binding.content, false)
+        browser.serverOrigin.text = state.serverOrigin
+        browser.reauthenticateButton.setOnClickListener { viewModel.reauthenticate() }
+        binding.content.addView(browser.root)
+        browserBinding = browser
+        lastBrowserOrigin = state.serverOrigin
+        browserOpen = try {
+            webSessionBridge.open(browser.webView, state.serverOrigin, state.cookieHeader)
+        } catch (_: IllegalArgumentException) {
+            showBrowserAuthenticationProblem(R.string.web_session_failed)
+            null
+        }
+    }
+
+    private fun showBrowserAuthenticationProblem(message: Int) {
+        val browser = browserBinding ?: return
+        browser.browserNotice.setText(message)
+        browser.browserNotice.visibility = View.VISIBLE
+        browser.reauthenticateButton.visibility = View.VISIBLE
+    }
+
+    private fun disposeBrowser(clearSession: Boolean) {
+        browserOpen?.cancel()
+        browserOpen = null
+        browserBinding?.webView?.apply {
+            stopLoading()
+            clearHistory()
+            removeAllViews()
+            destroy()
+        }
+        browserBinding = null
+        if (clearSession) {
+            lastBrowserOrigin?.let(webSessionBridge::clearSession)
+            lastBrowserOrigin = null
         }
     }
 
@@ -190,6 +261,21 @@ class MainActivity : AppCompatActivity() {
                 .setBeepEnabled(false)
                 .setOrientationLocked(false),
         )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onHostResumed()
+    }
+
+    override fun onDestroy() {
+        countdownJob?.cancel()
+        disposeBrowser(clearSession = isFinishing)
+        super.onDestroy()
+    }
+
+    private fun toast(message: Int) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private companion object {
