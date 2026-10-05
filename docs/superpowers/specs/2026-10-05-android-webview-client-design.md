@@ -101,6 +101,9 @@ framearchive://pair?v=1&server=<percent-encoded-origin>&token=<base64url-token>
 - 主框架只允许已配对服务器的同 origin URL。
 - 不同 origin 的 HTTPS 链接交给系统浏览器。
 - 不同 origin 的 HTTP 链接拒绝。
+- 网页下载由应用内受控下载器处理，不交给系统 `DownloadManager`。HTTP 客户端关闭自动重定向，
+  每一跳都先验证为已配对的同 origin（最多五跳）再携带会话 Cookie 发起下一请求；文件名经过清洗，
+  临时文件与完成文件只写入应用专用的 Downloads 目录，避免跨 origin 重定向泄露认证 Cookie。
 - 文件选择、相机、麦克风、定位和任意证书错误默认拒绝。
 - Android 返回键优先返回 WebView 历史，无法返回时退出 Activity。
 

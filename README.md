@@ -139,6 +139,10 @@ APK 并确认安装。2026 年直接侧载仍可使用；若设备启用了 Andr
 设备上批准，手机将自动进入影像库。设备丢失或不再使用时，在「设置 → 信任设备」中撤销；客户端
 会话随后失效。再次使用时，在手机端取消旧配对并重新扫码、核对验证码和批准。
 
+Android 客户端中的网页下载由应用安全检查每一跳同源后保存到应用专用 Downloads 目录；该目录
+通常位于系统显示的“Android/data/com.framearchive.mobile/files/Download”下，卸载应用时可能一并删除，
+需要长期保留的文件请及时复制到其他目录。
+
 发布脚本 `./scripts/build-android-apk.sh` 会在首次运行时创建本机唯一的稳定签名，并完成 release
 测试、Lint、构建、签名校验和 SHA-256 文件生成。`android/signing/` 已被 Git 忽略，其中的 keystore
 和密码文件不会提交。请把**整个 `android/signing/` 目录**安全备份；丢失或只恢复其中一个文件，

@@ -3,6 +3,7 @@ package com.framearchive.mobile.network
 import com.framearchive.mobile.crypto.PublicJwk
 import com.framearchive.mobile.pairing.DeviceAuthApiFactory
 import com.framearchive.mobile.pairing.DeviceKeyOperations
+import com.framearchive.mobile.pairing.IdentityCleanupFailed
 import com.framearchive.mobile.pairing.PairingLink
 import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.DeviceIdentity
@@ -795,17 +796,72 @@ class DeviceAuthApiTest {
     }
 
     @Test
-    fun cancelSurfacesCleanupFailureAndStillAttemptsKeyDeletion() = runTest {
+    fun keyDeleteFailureKeepsIdentityAndRetryCompletesCleanup() = runTest {
         val fixture = repositoryFixture()
-        fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
-        fixture.store.clearError = IllegalStateException("clear failed")
+        val identity = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        fixture.keys.deleteError = IllegalStateException("delete failed")
 
-        val error = org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+        val error = org.junit.Assert.assertThrows(IdentityCleanupFailed::class.java) {
             fixture.repository.cancel()
         }
 
-        assertEquals("clear failed", error.message)
-        assertEquals(listOf("new-key"), fixture.keys.deleted)
+        assertEquals("Device identity cleanup failed", error.message)
+        assertEquals(identity, fixture.store.value)
+        assertTrue("new-key" in fixture.keys.aliases)
+
+        fixture.keys.deleteError = null
+        fixture.repository.cancel()
+
+        assertNull(fixture.store.value)
+        assertFalse("new-key" in fixture.keys.aliases)
+    }
+
+    @Test
+    fun identityClearFailureKeepsIdentityAfterKeyDeletionAndRetryCompletesCleanup() = runTest {
+        val fixture = repositoryFixture()
+        val identity = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        fixture.store.clearError = IllegalStateException("clear failed")
+
+        assertThrowsIdentityCleanup { fixture.repository.cancel() }
+
+        assertEquals(identity, fixture.store.value)
+        assertFalse("new-key" in fixture.keys.aliases)
+
+        fixture.store.clearError = null
+        fixture.repository.cancel()
+
+        assertNull(fixture.store.value)
+        assertEquals(listOf("new-key", "new-key"), fixture.keys.deleted)
+    }
+
+    @Test
+    fun rejectedPairingCleanupFailureDoesNotMasqueradeAsTerminalSuccess() = runTest {
+        val fixture = repositoryFixture(PairingStatus.Rejected)
+        val identity = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        fixture.keys.deleteError = IllegalStateException("delete failed")
+
+        assertSuspendThrows<IdentityCleanupFailed> { fixture.repository.awaitApproval(identity) }
+
+        assertEquals(identity, fixture.store.value)
+        assertTrue("new-key" in fixture.keys.aliases)
+        fixture.keys.deleteError = null
+        fixture.repository.cancel()
+        assertNull(fixture.store.value)
+    }
+
+    @Test
+    fun revokedDeviceCleanupFailureDoesNotMasqueradeAsRevocationCompletion() = runTest {
+        val fixture = repositoryFixture()
+        val pending = fixture.repository.submit(PairingLink("https://example.com", "token"), "Pixel")
+        val approved = pending.copy(pending = null)
+        fixture.store.save(approved)
+        fixture.api.verifyError = DeviceRevoked()
+        fixture.keys.deleteError = IllegalStateException("delete failed")
+
+        assertSuspendThrows<IdentityCleanupFailed> { fixture.repository.authenticate(approved) }
+
+        assertEquals(approved, fixture.store.value)
+        assertTrue("new-key" in fixture.keys.aliases)
     }
 
     private fun repositoryFixture(vararg statuses: PairingStatus): RepositoryFixture {
@@ -870,8 +926,8 @@ class DeviceAuthApiTest {
             saved += identity
         }
         override fun clear() {
-            clearError?.let { throw it }
             value = null
+            clearError?.let { throw it }
         }
     }
 
@@ -901,6 +957,7 @@ class DeviceAuthApiTest {
         val aliases = mutableSetOf<String>()
         val deleted = mutableListOf<String>()
         var lastChallenge: ByteArray? = null
+        var deleteError: Throwable? = null
 
         override fun contains(alias: String): Boolean = alias in aliases
         override fun create(alias: String): PublicJwk {
@@ -912,6 +969,7 @@ class DeviceAuthApiTest {
             return signature
         }
         override fun delete(alias: String) {
+            deleteError?.let { throw it }
             deleted += alias
             aliases -= alias
         }
@@ -958,6 +1016,7 @@ class DeviceAuthApiTest {
         var statusCalls = 0
         var challengeCalls = 0
         var verifyCalls = 0
+        var verifyError: Throwable? = null
         var verifyEntered: CountDownLatch? = null
         var releaseVerify: CountDownLatch? = null
 
@@ -981,6 +1040,7 @@ class DeviceAuthApiTest {
             releaseVerify?.let {
                 check(it.await(2, TimeUnit.SECONDS)) { "Timed out releasing verification" }
             }
+            verifyError?.let { throw it }
             return AuthSession("frame_device_session=value; Path=/")
         }
         override suspend fun isAuthenticated(): Boolean = true
@@ -995,6 +1055,9 @@ class DeviceAuthApiTest {
         if (error !is T) throw AssertionError("Expected ${T::class.java.simpleName}", error)
         error
     }
+
+    private fun assertThrowsIdentityCleanup(action: () -> Unit): IdentityCleanupFailed =
+        org.junit.Assert.assertThrows(IdentityCleanupFailed::class.java, action)
 
     private fun takeRequest(): RecordedRequest =
         server.takeRequest(2, TimeUnit.SECONDS) ?: throw AssertionError("Expected HTTP request")

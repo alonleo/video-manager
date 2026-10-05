@@ -9,6 +9,7 @@ import com.framearchive.mobile.network.NetworkUnavailable
 import com.framearchive.mobile.network.PairingExpired
 import com.framearchive.mobile.network.PairingRejected
 import com.framearchive.mobile.pairing.PairingCoordinator
+import com.framearchive.mobile.pairing.IdentityCleanupFailed
 import com.framearchive.mobile.pairing.PairingLink
 import com.framearchive.mobile.storage.DeviceIdentity
 import com.framearchive.mobile.storage.IdentityStoreCorrupted
@@ -68,7 +69,7 @@ class MainViewModelTest {
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
 
         viewModel.submit(
-            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${"a".repeat(43)}",
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=$VALID_TOKEN",
             "测试手机",
         )
         assertEquals(AppState.Authenticating, viewModel.uiState.value.appState)
@@ -135,6 +136,28 @@ class MainViewModelTest {
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
     }
+
+    @Test
+    fun rejectedPairingCleanupFailureStaysRetryableInsteadOfReportingTerminalState() =
+        runTest(dispatcher) {
+            val pending = pendingIdentity()
+            val fake = FakeCoordinator(pending).apply {
+                approvalResult = CompletableDeferred<DeviceIdentity>().also {
+                    it.completeExceptionally(IdentityCleanupFailed(IllegalStateException("delete failed")))
+                }
+            }
+
+            val viewModel = MainViewModel(fake, dispatcher) { NOW }
+            runCurrent()
+
+            assertEquals(
+                AppState.RecoverableError("操作失败，请重试", true),
+                viewModel.uiState.value.appState,
+            )
+            assertEquals(pending, fake.identity)
+            assertTrue(viewModel.uiState.value.canResetIdentity)
+            assertFalse(viewModel.uiState.value.clearWebData)
+        }
 
     @Test
     fun expiredPairingClearsIdentityAndReturnsToScanner() = runTest(dispatcher) {
@@ -204,6 +227,28 @@ class MainViewModelTest {
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
     }
+
+    @Test
+    fun revokedIdentityCleanupFailureStaysRetryableInsteadOfReturningToScanner() =
+        runTest(dispatcher) {
+            val approved = pendingIdentity().copy(pending = null)
+            val fake = FakeCoordinator(approved).apply {
+                authenticationResult = CompletableDeferred<AuthSession>().also {
+                    it.completeExceptionally(IdentityCleanupFailed(IllegalStateException("delete failed")))
+                }
+            }
+
+            val viewModel = MainViewModel(fake, dispatcher) { NOW }
+            runCurrent()
+
+            assertEquals(
+                AppState.RecoverableError("操作失败，请重试", true),
+                viewModel.uiState.value.appState,
+            )
+            assertEquals(approved, fake.identity)
+            assertTrue(viewModel.uiState.value.canResetIdentity)
+            assertFalse(viewModel.uiState.value.clearWebData)
+        }
 
     @Test
     fun hostResumeRefreshesBrowsingSessionWithoutStartingConcurrentAuthentication() = runTest(dispatcher) {
@@ -309,7 +354,7 @@ class MainViewModelTest {
 
         runCurrent()
         viewModel.submit(
-            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${"a".repeat(43)}",
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=$VALID_TOKEN",
             "测试手机",
         )
         runCurrent()
@@ -337,6 +382,14 @@ class MainViewModelTest {
             AppState.RecoverableError("配对链接无效，请检查后重试", false),
             viewModel.uiState.value.appState,
         )
+
+        viewModel.submit(
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=abc",
+            "测试手机",
+        )
+        runCurrent()
+
+        assertEquals(0, fake.submitCalls)
     }
 
     @Test
@@ -445,7 +498,7 @@ class MainViewModelTest {
         runCurrent()
         viewModel.updateDeviceName("当前设备名")
         val scanned =
-            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${"a".repeat(43)}"
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=$VALID_TOKEN"
 
         assertTrue(viewModel.updatePairingLinkFromScan(scanned))
         viewModel.submit()
@@ -583,6 +636,7 @@ class MainViewModelTest {
     private companion object {
         const val NOW = 1_000L
         const val EXPIRES_AT = 121_000L
+        const val VALID_TOKEN = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
 
         fun pendingIdentity() = DeviceIdentity(
             serverOrigin = "http://192.168.1.70:8420",

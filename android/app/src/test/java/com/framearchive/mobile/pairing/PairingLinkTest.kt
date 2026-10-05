@@ -5,16 +5,17 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 class PairingLinkTest {
     @Test
     fun `parses the planned pairing link example exactly`() {
         val link = PairingLink.parse(
-            pairingUrl(server = "http://192.168.1.10:3000", token = "abc"),
+            pairingUrl(server = "http://192.168.1.10:3000", token = VALID_TOKEN),
         )
 
         assertEquals("http://192.168.1.10:3000", link.serverOrigin)
-        assertEquals("abc", link.token)
+        assertEquals(VALID_TOKEN, link.token)
     }
 
     @Test
@@ -142,23 +143,23 @@ class PairingLinkTest {
     fun `rejects malformed outer pairing protocol`() {
         val validServer = encode("https://example.com")
         listOf(
-            "framearchive://pair?server=$validServer&token=abc",
+            "framearchive://pair?server=$validServer&token=$VALID_TOKEN",
             "framearchive://pair?v=1&server=$validServer",
-            "framearchive://pair?v=1&token=abc",
-            "framearchive://pair?v=1&v=1&server=$validServer&token=abc",
-            "framearchive://pair?v=1&server=$validServer&server=$validServer&token=abc",
-            "framearchive://pair?v=1&server=$validServer&token=abc&token=def",
-            "framearchive://pair?v=1&server=$validServer&token=abc&extra=x",
-            "framearchive://pair?v&server=$validServer&token=abc",
-            "https://pair?v=1&server=$validServer&token=abc",
-            "framearchive://other?v=1&server=$validServer&token=abc",
-            "framearchive://pair/path?v=1&server=$validServer&token=abc",
-            "framearchive://pair/?v=1&server=$validServer&token=abc",
-            "framearchive://pair?v=1&server=$validServer&token=abc#fragment",
-            "framearchive://pair:?v=1&server=$validServer&token=abc",
-            "framearchive://pair:123?v=1&server=$validServer&token=abc",
-            "framearchive://user@pair?v=1&server=$validServer&token=abc",
-            "framearchive://pair?v=1&server=%ZZ&token=abc",
+            "framearchive://pair?v=1&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&server=$validServer&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&server=$validServer&token=$VALID_TOKEN&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&server=$validServer&token=$VALID_TOKEN&extra=x",
+            "framearchive://pair?v&server=$validServer&token=$VALID_TOKEN",
+            "https://pair?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://other?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair/path?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair/?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&server=$validServer&token=$VALID_TOKEN#fragment",
+            "framearchive://pair:?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair:123?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://user@pair?v=1&server=$validServer&token=$VALID_TOKEN",
+            "framearchive://pair?v=1&server=%ZZ&token=$VALID_TOKEN",
             "framearchive://pair?v=1&server=$validServer&token=%",
         ).forEach(::assertPairingRejected)
     }
@@ -166,7 +167,7 @@ class PairingLinkTest {
     @Test
     fun `rejects unsupported versions with an upgrade message`() {
         val error = assertThrows(InvalidPairingLink::class.java) {
-            PairingLink.parse(pairingUrl("https://example.com", "abc", version = "2"))
+            PairingLink.parse(pairingUrl("https://example.com", VALID_TOKEN, version = "2"))
         }
 
         check(error.message.orEmpty().contains("升级")) {
@@ -175,68 +176,56 @@ class PairingLinkTest {
     }
 
     @Test
-    fun `rejects empty and whitespace-only tokens`() {
-        listOf("", " ", "\t\n").forEach { token ->
-            assertPairingRejected(pairingUrl("https://example.com", token))
-        }
-    }
-
-    @Test
-    fun `rejects control characters embedded in tokens`() {
-        listOf("abc\u0000def", "abc\rdef", "abc\ndef", "abc\u007fdef").forEach { token ->
-            assertPairingRejected(pairingUrl("https://example.com", token))
-        }
-    }
-
-    @Test
-    fun `decodes token exactly once and preserves meaningful whitespace`() {
-        val plus = PairingLink.parse(
-            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=a%2Bb",
-        )
-        assertEquals("a+b", plus.token)
-
-        val encodedPercent = PairingLink.parse(
-            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=a%252Bb",
-        )
-        assertEquals("a%2Bb", encodedPercent.token)
-
-        val padded = PairingLink.parse(pairingUrl("https://example.com", " abc "))
-        assertEquals(" abc ", padded.token)
-
-        val urlSafeBase64 = "Abc_123-Xyz"
+    fun `accepts only canonical unpadded base64url encoding of exactly 32 bytes`() {
         assertEquals(
-            urlSafeBase64,
-            PairingLink.parse(pairingUrl("https://example.com", urlSafeBase64)).token,
+            VALID_TOKEN,
+            PairingLink.parse(pairingUrl("https://example.com", VALID_TOKEN)).token,
+        )
+        listOf(
+            "abc",
+            "",
+            " ",
+            "%",
+            "中文",
+            "$VALID_TOKEN=",
+            Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(31)),
+            Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(33)),
+            "${VALID_TOKEN.dropLast(1)}B",
+        ).forEach { token -> assertPairingRejected(pairingUrl("https://example.com", token)) }
+
+        assertPairingRejected(
+            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=%41${VALID_TOKEN.drop(1)}",
         )
     }
 
     @Test
-    fun `keeps percent-encoded query delimiters inside the token value`() {
-        val link = PairingLink.parse(
-            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com%3A8443&token=a%26b%3Dc",
-        )
+    fun `invalid token error is stable and never echoes token material`() {
+        val invalid = "private-token-material"
+        val error = assertThrows(InvalidPairingLink::class.java) {
+            PairingLink.parse(pairingUrl("https://example.com", invalid))
+        }
 
-        assertEquals("https://example.com:8443", link.serverOrigin)
-        assertEquals("a&b=c", link.token)
+        assertEquals("配对令牌格式无效", error.message)
+        check(!error.message.orEmpty().contains(invalid))
     }
 
     @Test
     fun `rejects invalid UTF-8 in percent-encoded values`() {
         assertPairingRejected(
-            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com&token=%C3%28",
+            "framearchive://pair?v=1&server=https%3A%2F%2Fexample.com%C3%28&token=$VALID_TOKEN",
         )
     }
 
     private fun assertOrigin(rawOrigin: String, expectedOrigin: String) {
         assertEquals(
             expectedOrigin,
-            PairingLink.parse(pairingUrl(rawOrigin, "abc")).serverOrigin,
+            PairingLink.parse(pairingUrl(rawOrigin, VALID_TOKEN)).serverOrigin,
         )
     }
 
     private fun assertServerRejected(rawOrigin: String) {
         val origin = if (rawOrigin.contains("://")) rawOrigin else "http://$rawOrigin"
-        assertPairingRejected(pairingUrl(origin, "abc"))
+        assertPairingRejected(pairingUrl(origin, VALID_TOKEN))
     }
 
     private fun assertPairingRejected(raw: String) {
@@ -248,4 +237,8 @@ class PairingLinkTest {
 
     private fun encode(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+
+    private companion object {
+        const val VALID_TOKEN = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
 }

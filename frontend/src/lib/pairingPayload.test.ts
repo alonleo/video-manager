@@ -6,12 +6,14 @@ import {
   type PairingMode,
 } from "./pairingPayload";
 
+const PAIRING_TOKEN = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+
 describe("buildPairingPayload", () => {
   it("builds the documented Android LAN payload", () => {
     expect(
-      buildPairingPayload("android", "http://192.168.1.70:8420", "abc"),
+      buildPairingPayload("android", "http://192.168.1.70:8420", PAIRING_TOKEN),
     ).toBe(
-      "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=abc",
+      `framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${PAIRING_TOKEN}`,
     );
   });
 
@@ -60,6 +62,8 @@ describe("buildPairingPayload", () => {
 
 describe("normalizePairingOrigin", () => {
   it.each([
+    "http://localhost",
+    "http://localhost:8420",
     "http://10.0.0.1:8420",
     "http://10.255.255.255:8420",
     "http://172.16.0.1:8420",
@@ -70,6 +74,15 @@ describe("normalizePairingOrigin", () => {
   ])("allows Android HTTP pairing with private IPv4 origin %s", (origin) => {
     expect(normalizePairingOrigin(origin, "android")).toBe(origin);
   });
+
+  it.each(["http://localhost", "http://localhost:8420"])(
+    "keeps browser HTTP localhost forbidden for %s",
+    (origin) => {
+      expect(() => normalizePairingOrigin(origin, "browser")).toThrow(
+        "浏览器配对必须使用 HTTPS",
+      );
+    },
+  );
 
   it.each([
     "http://172.15.255.255:8420",

@@ -5,6 +5,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.Locale
 
 data class PairingLink(val serverOrigin: String, val token: String) {
@@ -19,10 +20,7 @@ data class PairingLink(val serverOrigin: String, val token: String) {
                     throw InvalidPairingLink("二维码版本不受支持，请升级应用后重试")
                 }
 
-                val token = parameters.getValue("token")
-                if (token.isBlank() || token.any { it.isISOControl() }) {
-                    throw InvalidPairingLink("配对 token 不能为空或包含控制字符")
-                }
+                val token = requireCanonicalToken(parameters.getValue("token"))
 
                 return PairingLink(
                     serverOrigin = TrustedServerOrigin.parse(parameters.getValue("server")),
@@ -61,7 +59,11 @@ data class PairingLink(val serverOrigin: String, val token: String) {
                 if (name !in REQUIRED_PARAMETERS || values.containsKey(name)) {
                     throw InvalidPairingLink("配对二维码包含未知或重复参数")
                 }
-                values[name] = percentDecode(part.substring(equals + 1))
+                val rawValue = part.substring(equals + 1)
+                if (name == "token" && '%' in rawValue) {
+                    throw InvalidPairingLink("配对令牌格式无效")
+                }
+                values[name] = percentDecode(rawValue)
             }
             if (values.keys != REQUIRED_PARAMETERS) {
                 throw InvalidPairingLink("配对二维码缺少必要参数")
@@ -99,7 +101,29 @@ data class PairingLink(val serverOrigin: String, val token: String) {
                 .toString()
         }
 
+        private fun requireCanonicalToken(token: String): String {
+            if (token.length != PAIRING_TOKEN_LENGTH || token.any { it !in BASE64URL_CHARACTERS }) {
+                throw InvalidPairingLink("配对令牌格式无效")
+            }
+            val decoded = try {
+                Base64.getUrlDecoder().decode(token)
+            } catch (_: IllegalArgumentException) {
+                throw InvalidPairingLink("配对令牌格式无效")
+            }
+            if (
+                decoded.size != PAIRING_TOKEN_BYTES ||
+                Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) != token
+            ) {
+                throw InvalidPairingLink("配对令牌格式无效")
+            }
+            return token
+        }
+
         private val REQUIRED_PARAMETERS = setOf("v", "server", "token")
+        private const val PAIRING_TOKEN_BYTES = 32
+        private const val PAIRING_TOKEN_LENGTH = 43
+        private val BASE64URL_CHARACTERS =
+            ('A'..'Z') + ('a'..'z') + ('0'..'9') + setOf('-', '_')
     }
 }
 

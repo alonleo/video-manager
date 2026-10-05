@@ -703,7 +703,12 @@ assertEquals(BLOCK, policy.decide("http://192.168.1.71:8420/"))
 
 - [ ] **步骤 4：实现安全 WebViewClient**
 
-同 origin 在 WebView 内打开；外部 HTTPS 发 `ACTION_VIEW`；其他请求显示阻止提示。`onReceivedSslError` 必须 `handler.cancel()`，不得绕过证书错误。下载交给系统 `DownloadManager` 前再次检查同 origin。
+同 origin 在 WebView 内打开；外部 HTTPS 发 `ACTION_VIEW`；其他请求显示阻止提示。`onReceivedSslError` 必须 `handler.cancel()`，不得绕过证书错误。
+
+安全审查后，下载不交给系统 `DownloadManager`：它无法保证跨 origin 重定向时不转发自定义会话 Cookie。
+最终实现使用应用内受控下载器，关闭自动重定向并逐跳验证同 origin，只有验证通过后才携带 Cookie
+请求下一跳；限制重定向次数和文件大小，清洗服务端文件名，并以临时文件原子保存到应用专用
+Downloads 目录。该实现是对原计划的必要安全替代。
 
 - [ ] **步骤 5：处理返回键和恢复认证**
 

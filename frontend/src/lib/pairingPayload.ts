@@ -28,6 +28,9 @@ function isPrivateIpv6(hostname: string): boolean {
 }
 
 function isPrivateHost(hostname: string): boolean {
+  if (hostname.toLowerCase() === "localhost") {
+    return true;
+  }
   return hostname.includes(":")
     ? isPrivateIpv6(hostname)
     : isPrivateIpv4(hostname);

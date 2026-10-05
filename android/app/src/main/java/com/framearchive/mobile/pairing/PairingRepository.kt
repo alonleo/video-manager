@@ -50,6 +50,9 @@ internal fun interface DeviceAuthApiFactory {
 class StaleIdentityOperation(message: String = "Device identity changed while the operation was running") :
     IllegalStateException(message)
 
+class IdentityCleanupFailed(cause: Throwable) :
+    IllegalStateException("Device identity cleanup failed", cause)
+
 class PairingRepository internal constructor(
     private val identityStore: IdentityStore,
     private val keyOps: DeviceKeyOperations,
@@ -114,16 +117,16 @@ class PairingRepository internal constructor(
             val pending = current.pending!!
             if (nowEpochMillis() >= pending.expiresAtEpochMillis) {
                 val expired = PairingExpired()
-                clearPendingOrThrowStale(identity, expired)
+                clearPendingOrThrowStale(identity)
                 throw expired
             }
             val status = try {
                 api.pairingStatus(pending.pairingId, pending.claimSecret)
             } catch (error: PairingExpired) {
-                clearPendingOrThrowStale(identity, error)
+                clearPendingOrThrowStale(identity)
                 throw error
             } catch (error: PairingRejected) {
-                clearPendingOrThrowStale(identity, error)
+                clearPendingOrThrowStale(identity)
                 throw error
             }
             when (status) {
@@ -131,12 +134,12 @@ class PairingRepository internal constructor(
                 PairingStatus.Approved -> return approvePendingOrThrowStale(identity)
                 PairingStatus.Rejected -> {
                     val rejected = PairingRejected()
-                    clearPendingOrThrowStale(identity, rejected)
+                    clearPendingOrThrowStale(identity)
                     throw rejected
                 }
                 PairingStatus.Expired -> {
                     val expired = PairingExpired()
-                    clearPendingOrThrowStale(identity, expired)
+                    clearPendingOrThrowStale(identity)
                     throw expired
                 }
             }
@@ -150,7 +153,7 @@ class PairingRepository internal constructor(
         val expected = currentApproved(identity)
         if (!keyOps.contains(expected.keyAlias)) {
             val missing = IllegalStateException("Device authentication key is unavailable")
-            clearApprovedOrThrowStale(expected, missing)
+            clearApprovedOrThrowStale(expected)
             throw missing
         }
         val api = apiFactory.create(expected.serverOrigin)
@@ -162,12 +165,12 @@ class PairingRepository internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                clearApprovedOrThrowStale(expected, error)
+                clearApprovedOrThrowStale(expected)
                 throw error
             }
             if (signature.size != P1363_SIGNATURE_BYTES) {
                 val invalid = IllegalArgumentException("Device key returned an invalid P1363 signature")
-                clearApprovedOrThrowStale(expected, invalid)
+                clearApprovedOrThrowStale(expected)
                 throw invalid
             }
             val session = api.verify(expected.deviceId, challenge, signature)
@@ -176,7 +179,7 @@ class PairingRepository internal constructor(
             }
             return session
         } catch (error: DeviceRevoked) {
-            clearApprovedOrThrowStale(expected, error)
+            clearApprovedOrThrowStale(expected)
             throw error
         }
     }
@@ -187,18 +190,7 @@ class PairingRepository internal constructor(
     override fun cancel() {
         synchronized(IDENTITY_STATE_LOCK) {
             val identity = identityStore.read() ?: return
-            var failure: Throwable? = null
-            try {
-                identityStore.clear()
-            } catch (cleanup: Throwable) {
-                failure = cleanup
-            }
-            try {
-                keyOps.delete(identity.keyAlias)
-            } catch (cleanup: Throwable) {
-                failure?.addSuppressed(cleanup) ?: run { failure = cleanup }
-            }
-            failure?.let { throw it }
+            clearLocked(identity)
         }
     }
 
@@ -243,32 +235,37 @@ class PairingRepository internal constructor(
             approved
         }
 
-    private fun clearPendingOrThrowStale(expected: DeviceIdentity, original: Throwable) {
+    private fun clearPendingOrThrowStale(expected: DeviceIdentity) {
         synchronized(IDENTITY_STATE_LOCK) {
             val current = identityStore.read()?.takeIf { matchesPending(it, expected) }
                 ?: throw StaleIdentityOperation()
-            clearLocked(current, original)
+            clearLocked(current)
         }
     }
 
-    private fun clearApprovedOrThrowStale(expected: DeviceIdentity, original: Throwable) {
+    private fun clearApprovedOrThrowStale(expected: DeviceIdentity) {
         synchronized(IDENTITY_STATE_LOCK) {
             val current = identityStore.read()?.takeIf { matchesApproved(it, expected) }
                 ?: throw StaleIdentityOperation()
-            clearLocked(current, original)
+            clearLocked(current)
         }
     }
 
-    private fun clearLocked(current: DeviceIdentity, original: Throwable) {
-        try {
-            identityStore.clear()
-        } catch (cleanup: Throwable) {
-            original.addSuppressed(cleanup)
-        }
+    private fun clearLocked(current: DeviceIdentity) {
         try {
             keyOps.delete(current.keyAlias)
         } catch (cleanup: Throwable) {
-            original.addSuppressed(cleanup)
+            throw IdentityCleanupFailed(cleanup)
+        }
+        try {
+            identityStore.clear()
+        } catch (cleanup: Throwable) {
+            try {
+                identityStore.save(current)
+            } catch (restore: Throwable) {
+                cleanup.addSuppressed(restore)
+            }
+            throw IdentityCleanupFailed(cleanup)
         }
     }
 
