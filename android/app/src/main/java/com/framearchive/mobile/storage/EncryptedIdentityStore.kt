@@ -8,7 +8,6 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -28,11 +27,17 @@ class IdentityStoreCorrupted(
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
+internal object GcmIvValidator {
+    fun requireValid(iv: ByteArray?): ByteArray =
+        iv?.takeIf { it.size == GCM_IV_SIZE_BYTES }
+            ?: throw IllegalStateException("Android Keystore did not generate a valid GCM IV")
+}
+
+private const val GCM_IV_SIZE_BYTES = 12
+
 class EncryptedIdentityStore(context: Context) : IdentityStore {
     private val preferences: SharedPreferences =
         (context.applicationContext ?: context).getSharedPreferences(PREFERENCES_FILE, Context.MODE_PRIVATE)
-    private val secureRandom = SecureRandom()
-
     @Synchronized
     override fun read(): DeviceIdentity? {
         val hasIv = preferences.contains(IV_KEY)
@@ -61,7 +66,7 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         } catch (error: IllegalArgumentException) {
             clearCorruptedAndThrow("Stored device identity is not valid base64", error)
         }
-        if (iv.size != IV_SIZE_BYTES) {
+        if (iv.size != GCM_IV_SIZE_BYTES) {
             clearCorruptedAndThrow("Stored device identity has an invalid IV")
         }
 
@@ -90,11 +95,11 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
     @Synchronized
     override fun save(identity: DeviceIdentity) {
         val plaintext = IdentityCodec.encode(identity).toByteArray(StandardCharsets.UTF_8)
-        val iv = ByteArray(IV_SIZE_BYTES).also(secureRandom::nextBytes)
-        val ciphertext = try {
+        val encrypted = try {
             Cipher.getInstance(CIPHER_TRANSFORMATION).run {
-                init(Cipher.ENCRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_SIZE_BITS, iv))
-                doFinal(plaintext)
+                init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+                val providerIv = GcmIvValidator.requireValid(iv)
+                EncryptedPayload(providerIv, doFinal(plaintext))
             }
         } catch (error: GeneralSecurityException) {
             throw IllegalStateException("Unable to encrypt device identity", error)
@@ -104,8 +109,8 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
 
         val committed = preferences.edit()
             .clear()
-            .putString(IV_KEY, Base64.getEncoder().encodeToString(iv))
-            .putString(CIPHERTEXT_KEY, Base64.getEncoder().encodeToString(ciphertext))
+            .putString(IV_KEY, Base64.getEncoder().encodeToString(encrypted.iv))
+            .putString(CIPHERTEXT_KEY, Base64.getEncoder().encodeToString(encrypted.ciphertext))
             .commit()
         if (!committed) {
             throw IllegalStateException("Unable to persist encrypted device identity")
@@ -158,6 +163,11 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         throw error
     }
 
+    private data class EncryptedPayload(
+        val iv: ByteArray,
+        val ciphertext: ByteArray,
+    )
+
     private companion object {
         const val PREFERENCES_FILE = "frame_archive_encrypted_identity"
         const val IV_KEY = "iv"
@@ -167,6 +177,5 @@ class EncryptedIdentityStore(context: Context) : IdentityStore {
         const val CIPHER_TRANSFORMATION = "AES/GCM/NoPadding"
         const val KEY_SIZE_BITS = 256
         const val GCM_TAG_SIZE_BITS = 128
-        const val IV_SIZE_BYTES = 12
     }
 }
