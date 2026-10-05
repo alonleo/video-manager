@@ -12,6 +12,7 @@ import {
   type Pairing,
 } from "../api/deviceAuth";
 import Icon from "../components/Icon";
+import { buildPairingPayload, type PairingMode } from "../lib/pairingPayload";
 import "../components/trusted-devices.css";
 
 function formatTime(value: string | null) {
@@ -26,24 +27,21 @@ function formatTime(value: string | null) {
 
 function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void }) {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<PairingMode>("browser");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [siteOrigin, setSiteOrigin] = useState(window.location.origin);
   const pairTarget = useMemo(() => {
     try {
-      const url = new URL(siteOrigin);
-      const local = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
-      if (url.protocol !== "https:" && !local) {
-        return { url: "", error: "新设备访问地址必须使用 HTTPS。" };
-      }
+      const value = buildPairingPayload(mode, siteOrigin, pairing.token ?? "");
+      return { url: value, error: "" };
+    } catch (error) {
       return {
-        url: `${url.origin}/pair#token=${encodeURIComponent(pairing.token ?? "")}`,
-        error: "",
+        url: "",
+        error: error instanceof Error ? error.message : "无法生成配对链接，请检查服务器地址",
       };
-    } catch {
-      return { url: "", error: "请输入完整的网站地址，例如 https://video.home。" };
     }
-  }, [pairing.token, siteOrigin]);
+  }, [mode, pairing.token, siteOrigin]);
   const current = useQuery({
     queryKey: ["device-pairing", pairing.id],
     queryFn: () => getPairing(pairing.id),
@@ -68,13 +66,39 @@ function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void 
     </div>
     {data.status === "open" && <>
       <p>在新设备上使用相机扫码，然后回到这里核对验证码并批准。</p>
+      <fieldset className="pairing-mode">
+        <legend>扫码设备</legend>
+        <div className="pairing-mode-options">
+          <label className="pairing-mode-option">
+            <input type="radio" name="pairing-mode" checked={mode === "browser"} onChange={event => {
+              if (!event.currentTarget.checked) return;
+              setMode("browser");
+              setCopied(false);
+              setCopyError(false);
+            }} />
+            浏览器
+          </label>
+          <label className="pairing-mode-option">
+            <input type="radio" name="pairing-mode" checked={mode === "android"} onChange={event => {
+              if (!event.currentTarget.checked) return;
+              setMode("android");
+              setCopied(false);
+              setCopyError(false);
+            }} />
+            Android 应用
+          </label>
+        </div>
+      </fieldset>
+      <p className="pairing-mode-help">
+        {mode === "android" ? "允许私有局域网 HTTP；流量不会被加密" : "浏览器配对必须使用 HTTPS，以安全生成并保存设备密钥。"}
+      </p>
       <label className="pairing-origin">新设备访问地址
-        <input className="input" type="url" value={siteOrigin} onChange={event => { setSiteOrigin(event.target.value); setCopied(false); }} />
+        <input className="input" type="url" value={siteOrigin} onChange={event => { setSiteOrigin(event.target.value); setCopied(false); setCopyError(false); }} />
       </label>
       {pairTarget.error && <p className="inline-alert" role="alert">{pairTarget.error}</p>}
       {pairTarget.url && <div className="pairing-qr"><QRCodeSVG value={pairTarget.url} size={228} level="M" marginSize={2} /></div>}
       <p className="pairing-expiry">二维码两分钟内有效，且只能使用一次。</p>
-      {!window.isSecureContext && <p className="inline-alert" role="alert">当前页面不是 HTTPS。局域网内的其他设备无法安全生成密钥，请先为网站启用 HTTPS。</p>}
+      {mode === "browser" && !window.isSecureContext && <p className="inline-alert" role="alert">当前页面不是安全上下文。浏览器配对需要 HTTPS，请先为网站启用 HTTPS。</p>}
       <button className="btn-outline pairing-copy" type="button" disabled={!pairTarget.url} onClick={async () => {
         try {
           await navigator.clipboard.writeText(pairTarget.url);
