@@ -29,23 +29,34 @@ data class PairingDraft(val pairingLink: String, val deviceName: String) {
         "PairingDraft(pairingLink=<redacted>, deviceName=$deviceName)"
 }
 
+data class MainUiState(
+    val appState: AppState,
+    val canResetIdentity: Boolean = false,
+) {
+    init {
+        require(
+            !canResetIdentity ||
+                (appState is AppState.RecoverableError && appState.canRetry),
+        ) {
+            "Identity reset is only available from a recoverable error"
+        }
+    }
+}
+
 class MainViewModel(
     private val coordinator: PairingCoordinator,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialDeviceName: String = "",
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow<AppState>(AppState.NeedsPairing)
-    val state: StateFlow<AppState> = mutableState.asStateFlow()
+    private val mutableUiState = MutableStateFlow(MainUiState(AppState.NeedsPairing))
+    val uiState: StateFlow<MainUiState> = mutableUiState.asStateFlow()
 
     private val mutableApprovalDetails = MutableStateFlow<ApprovalDetails?>(null)
     val approvalDetails: StateFlow<ApprovalDetails?> = mutableApprovalDetails.asStateFlow()
 
     private val mutablePairingDraft = MutableStateFlow(PairingDraft("", initialDeviceName))
     val pairingDraft: StateFlow<PairingDraft> = mutablePairingDraft.asStateFlow()
-
-    private val mutableCanResetIdentity = MutableStateFlow(false)
-    val canResetIdentity: StateFlow<Boolean> = mutableCanResetIdentity.asStateFlow()
 
     private var operation: Job? = null
 
@@ -106,25 +117,36 @@ class MainViewModel(
     }
 
     fun cancelPairing() {
+        closeResetCapability()
+        clearIdentityAndReturnToPairing()
+    }
+
+    fun abandonIdentity() {
+        val snapshot = mutableUiState.value
+        if (snapshot.appState !is AppState.RecoverableError || !snapshot.canResetIdentity) return
+        if (!mutableUiState.compareAndSet(snapshot, snapshot.copy(canResetIdentity = false))) return
+        clearIdentityAndReturnToPairing()
+    }
+
+    private fun clearIdentityAndReturnToPairing() {
         operation?.cancel()
         operation = null
         try {
             coordinator.cancel()
         } catch (_: Throwable) {
-            transitionTo(AppState.RecoverableError("无法取消配对，请重试", true))
+            transitionTo(
+                AppState.RecoverableError("无法取消配对，请重试", true),
+                canResetIdentity = true,
+            )
             return
         }
         mutableApprovalDetails.value = null
         transitionTo(AppState.NeedsPairing)
     }
 
-    fun abandonIdentity() {
-        if (!mutableCanResetIdentity.value) return
-        cancelPairing()
-    }
-
     fun remainingApprovalMillis(): Long =
-        ((mutableState.value as? AppState.AwaitingApproval)?.expiresAt ?: nowEpochMillis()) - nowEpochMillis()
+        ((mutableUiState.value.appState as? AppState.AwaitingApproval)?.expiresAt ?: nowEpochMillis()) -
+            nowEpochMillis()
 
     private fun recover() {
         launchOperation {
@@ -266,13 +288,20 @@ class MainViewModel(
     }
 
     private fun transitionTo(state: AppState, canResetIdentity: Boolean = false) {
-        mutableCanResetIdentity.value = canResetIdentity
-        mutableState.value = state
+        mutableUiState.value = MainUiState(state, canResetIdentity)
+    }
+
+    private fun closeResetCapability() {
+        while (true) {
+            val snapshot = mutableUiState.value
+            if (!snapshot.canResetIdentity) return
+            if (mutableUiState.compareAndSet(snapshot, snapshot.copy(canResetIdentity = false))) return
+        }
     }
 
     private fun launchOperation(block: suspend () -> Unit) {
         operation?.cancel()
-        mutableCanResetIdentity.value = false
+        closeResetCapability()
         operation = viewModelScope.launch(dispatcher) { block() }
     }
 

@@ -56,7 +56,7 @@ class MainViewModelTest {
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
         runCurrent()
 
-        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.state.value)
+        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.uiState.value.appState)
         assertEquals(1, fake.waitCalls)
         assertEquals("192.168.1.70", viewModel.approvalDetails.value?.serverHost)
         assertEquals("测试手机", viewModel.approvalDetails.value?.deviceName)
@@ -72,28 +72,30 @@ class MainViewModelTest {
             authenticationResult = authentication
         }
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
-        val observed = mutableListOf<AppState>()
+        val observed = mutableListOf<MainUiState>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            viewModel.state.collect { observed += it }
+            viewModel.uiState.collect { observed += it }
         }
 
         runCurrent()
-        assertEquals(AppState.Authenticating, viewModel.state.value)
+        assertEquals(AppState.Authenticating, viewModel.uiState.value.appState)
         authentication.complete(AuthSession("frame_device_session=secret; HttpOnly"))
         runCurrent()
 
         assertEquals(
             AppState.Browsing(approved.serverOrigin, "frame_device_session=secret; HttpOnly"),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertEquals(1, fake.authenticateCalls)
-        assertFalse(viewModel.state.value.toString().contains("secret"))
-        val awaitingIndex = observed.indexOf(AppState.AwaitingApproval("123456", EXPIRES_AT))
-        val authenticatingIndex = observed.indexOf(AppState.Authenticating)
-        val browsingIndex = observed.indexOf(viewModel.state.value)
+        assertFalse(viewModel.uiState.value.appState.toString().contains("secret"))
+        val observedStates = observed.map(MainUiState::appState)
+        val awaitingIndex = observedStates.indexOf(AppState.AwaitingApproval("123456", EXPIRES_AT))
+        val authenticatingIndex = observedStates.indexOf(AppState.Authenticating)
+        val browsingIndex = observedStates.indexOf(viewModel.uiState.value.appState)
         assertTrue(awaitingIndex >= 0)
         assertTrue(authenticatingIndex > awaitingIndex)
         assertTrue(browsingIndex > authenticatingIndex)
+        assertTrue(observed.all { !it.canResetIdentity || it.appState is AppState.RecoverableError })
     }
 
     @Test
@@ -110,7 +112,7 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("配对申请已被电脑拒绝，请重新扫码", false),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
@@ -130,7 +132,7 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("二维码已过期，请重新扫码", false),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
@@ -146,18 +148,24 @@ class MainViewModelTest {
         }
 
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        val observed = mutableListOf<MainUiState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { observed += it }
+        }
         runCurrent()
 
-        assertEquals(AppState.RecoverableError("网络连接失败，请重试", true), viewModel.state.value)
+        assertEquals(AppState.RecoverableError("网络连接失败，请重试", true), viewModel.uiState.value.appState)
         assertEquals(pending, fake.identity)
-        assertTrue(viewModel.canResetIdentity.value)
+        assertTrue(viewModel.uiState.value.canResetIdentity)
 
         fake.approvalResult = CompletableDeferred()
         viewModel.retry()
         runCurrent()
-        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.state.value)
+        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.uiState.value.appState)
         assertEquals(2, fake.waitCalls)
-        assertFalse(viewModel.canResetIdentity.value)
+        assertFalse(viewModel.uiState.value.canResetIdentity)
+        assertTrue(observed.any(MainUiState::canResetIdentity))
+        assertTrue(observed.all { !it.canResetIdentity || it.appState is AppState.RecoverableError })
     }
 
     @Test
@@ -173,7 +181,7 @@ class MainViewModelTest {
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
         runCurrent()
 
-        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
         assertNull(fake.identity)
         assertEquals(0, fake.cancelCalls)
     }
@@ -195,12 +203,12 @@ class MainViewModelTest {
         runCurrent()
 
         assertEquals(1, fake.submitCalls)
-        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.state.value)
+        assertEquals(AppState.AwaitingApproval("123456", EXPIRES_AT), viewModel.uiState.value.appState)
         assertEquals("", viewModel.pairingDraft.value.pairingLink)
         viewModel.cancelPairing()
         runCurrent()
         assertEquals(1, fake.cancelCalls)
-        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
     }
 
     @Test
@@ -215,7 +223,7 @@ class MainViewModelTest {
         assertEquals(0, fake.submitCalls)
         assertEquals(
             AppState.RecoverableError("配对链接无效，请检查后重试", false),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
     }
 
@@ -252,11 +260,11 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertEquals(0, fake.submitCalls)
         assertEquals(0, fake.cancelCalls)
-        assertFalse(viewModel.canResetIdentity.value)
+        assertFalse(viewModel.uiState.value.canResetIdentity)
 
         viewModel.abandonIdentity()
         assertEquals(0, fake.cancelCalls)
@@ -264,7 +272,7 @@ class MainViewModelTest {
         fake.storedIdentityFailure = null
         viewModel.retry()
         runCurrent()
-        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
         assertEquals(2, fake.readCalls)
         assertEquals(0, fake.submitCalls)
         assertEquals(0, fake.cancelCalls)
@@ -280,7 +288,7 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("设备身份已损坏，请重新配对", false),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertEquals(0, fake.submitCalls)
         assertEquals(0, fake.cancelCalls)
@@ -348,11 +356,11 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertEquals(1, fake.readCalls)
         assertEquals(pending, fake.identity)
-        assertFalse(viewModel.canResetIdentity.value)
+        assertFalse(viewModel.uiState.value.canResetIdentity)
     }
 
     @Test
@@ -368,11 +376,11 @@ class MainViewModelTest {
 
         assertEquals(
             AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
-            viewModel.state.value,
+            viewModel.uiState.value.appState,
         )
         assertEquals(1, fake.readCalls)
         assertEquals(approved, fake.identity)
-        assertFalse(viewModel.canResetIdentity.value)
+        assertFalse(viewModel.uiState.value.canResetIdentity)
     }
 
     @Test
@@ -384,15 +392,16 @@ class MainViewModelTest {
         }
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
         runCurrent()
-        assertTrue(viewModel.canResetIdentity.value)
+        assertTrue(viewModel.uiState.value.canResetIdentity)
 
+        viewModel.abandonIdentity()
         viewModel.abandonIdentity()
         runCurrent()
 
         assertEquals(1, fake.cancelCalls)
         assertNull(fake.identity)
-        assertEquals(AppState.NeedsPairing, viewModel.state.value)
-        assertFalse(viewModel.canResetIdentity.value)
+        assertEquals(AppState.NeedsPairing, viewModel.uiState.value.appState)
+        assertFalse(viewModel.uiState.value.canResetIdentity)
     }
 
     private class FakeCoordinator(initialIdentity: DeviceIdentity?) : PairingCoordinator {

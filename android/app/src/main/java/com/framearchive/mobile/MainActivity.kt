@@ -23,12 +23,12 @@ import com.framearchive.mobile.databinding.ViewPairingBinding
 import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.EncryptedIdentityStore
 import com.framearchive.mobile.ui.AppState
+import com.framearchive.mobile.ui.MainUiState
 import com.framearchive.mobile.ui.MainViewModel
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -66,16 +66,13 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(viewModel.state, viewModel.canResetIdentity) { state, canResetIdentity ->
-                    state to canResetIdentity
-                }.collectLatest { (state, canResetIdentity) ->
-                    render(state, canResetIdentity)
-                }
+                viewModel.uiState.collectLatest(::render)
             }
         }
     }
 
-    private fun render(state: AppState, canResetIdentity: Boolean) {
+    private fun render(uiState: MainUiState) {
+        val state = uiState.appState
         countdownJob?.cancel()
         countdownJob = null
         binding.content.removeAllViews()
@@ -87,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             is AppState.Browsing -> renderStatus(getString(R.string.browser_placeholder))
             is AppState.RecoverableError -> {
                 if (state.canRetry) {
-                    renderRetryableError(state.message, canResetIdentity)
+                    renderRetryableError(state.message, uiState.canResetIdentity)
                 } else {
                     renderPairing(state.message)
                 }
