@@ -24,11 +24,18 @@
             android:layout_marginTop="@dimen/item_spacing"
             android:text="@string/pairing_description" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/section_spacing"
+            android:labelFor="@id/device_name_input"
+            android:text="@string/device_name_label" />
+
         <EditText
             android:id="@+id/device_name_input"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/section_spacing"
+            android:layout_marginTop="@dimen/item_spacing"
             android:hint="@string/device_name_hint"
             android:imeOptions="actionNext"
             android:importantForAutofill="no"
@@ -49,6 +56,13 @@
             android:gravity="center"
             android:text="@string/or_paste_link" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/item_spacing"
+            android:labelFor="@id/pairing_link_input"
+            android:text="@string/pairing_link_label" />
+
         <EditText
             android:id="@+id/pairing_link_input"
             android:layout_width="match_parent"
@@ -61,6 +75,7 @@
 
         <TextView
             android:id="@+id/error_text"
+            android:accessibilityLiveRegion="polite"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/item_spacing"

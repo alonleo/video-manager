@@ -11,12 +11,16 @@ import com.framearchive.mobile.network.PairingRejected
 import com.framearchive.mobile.pairing.PairingCoordinator
 import com.framearchive.mobile.pairing.PairingLink
 import com.framearchive.mobile.storage.DeviceIdentity
+import com.framearchive.mobile.storage.IdentityStoreCorrupted
+import com.framearchive.mobile.storage.IdentityStoreUnavailable
 import com.framearchive.mobile.storage.PendingPairing
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -68,6 +72,10 @@ class MainViewModelTest {
             authenticationResult = authentication
         }
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        val observed = mutableListOf<AppState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect { observed += it }
+        }
 
         runCurrent()
         assertEquals(AppState.Authenticating, viewModel.state.value)
@@ -80,6 +88,12 @@ class MainViewModelTest {
         )
         assertEquals(1, fake.authenticateCalls)
         assertFalse(viewModel.state.value.toString().contains("secret"))
+        val awaitingIndex = observed.indexOf(AppState.AwaitingApproval("123456", EXPIRES_AT))
+        val authenticatingIndex = observed.indexOf(AppState.Authenticating)
+        val browsingIndex = observed.indexOf(viewModel.state.value)
+        assertTrue(awaitingIndex >= 0)
+        assertTrue(authenticatingIndex > awaitingIndex)
+        assertTrue(browsingIndex > authenticatingIndex)
     }
 
     @Test
@@ -114,7 +128,10 @@ class MainViewModelTest {
         val viewModel = MainViewModel(fake, dispatcher) { NOW }
         runCurrent()
 
-        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertEquals(
+            AppState.RecoverableError("二维码已过期，请重新扫码", false),
+            viewModel.state.value,
+        )
         assertNull(fake.identity)
         assertFalse(fake.cancelled)
     }
@@ -222,6 +239,95 @@ class MainViewModelTest {
         assertFalse(fake.cancelled)
     }
 
+    @Test
+    fun unavailableIdentityStoreOnlyAllowsRetryWithoutClearingOrSubmitting() = runTest(dispatcher) {
+        val fake = FakeCoordinator(null).apply {
+            storedIdentityFailure = IdentityStoreUnavailable("temporarily unavailable")
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        assertEquals(
+            AppState.RecoverableError("设备身份暂时无法读取，请重试", true),
+            viewModel.state.value,
+        )
+        assertEquals(0, fake.submitCalls)
+        assertFalse(fake.cancelled)
+
+        fake.storedIdentityFailure = null
+        viewModel.retry()
+        runCurrent()
+        assertEquals(AppState.NeedsPairing, viewModel.state.value)
+        assertEquals(2, fake.readCalls)
+        assertEquals(0, fake.submitCalls)
+        assertFalse(fake.cancelled)
+    }
+
+    @Test
+    fun corruptedIdentityStoreExplainsThatRepairRequiresPairingAgain() = runTest(dispatcher) {
+        val fake = FakeCoordinator(null).apply {
+            storedIdentityFailure = IdentityStoreCorrupted("corrupted")
+        }
+        val viewModel = MainViewModel(fake, dispatcher) { NOW }
+        runCurrent()
+
+        assertEquals(
+            AppState.RecoverableError("设备身份已损坏，请重新配对", false),
+            viewModel.state.value,
+        )
+        assertEquals(0, fake.submitCalls)
+        assertFalse(fake.cancelled)
+    }
+
+    @Test
+    fun pairingDraftStaysInSharedViewModelAndIgnoresEmptyScanResults() = runTest(dispatcher) {
+        val fake = FakeCoordinator(null)
+        val store = ViewModelStore()
+        val provider = ViewModelProvider(
+            store,
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    MainViewModel(fake, dispatcher, "默认手机") { NOW } as T
+            },
+        )
+        val first = provider[MainViewModel::class.java]
+        runCurrent()
+        first.updatePairingLink("framearchive://pair?draft")
+        first.updateDeviceName("客厅手机")
+        assertFalse(first.updatePairingLinkFromScan(null))
+        assertFalse(first.updatePairingLinkFromScan("   "))
+
+        val afterConfigurationChange = provider[MainViewModel::class.java]
+        assertTrue(first === afterConfigurationChange)
+        assertEquals(
+            PairingDraft("framearchive://pair?draft", "客厅手机"),
+            afterConfigurationChange.pairingDraft.value,
+        )
+        assertFalse(afterConfigurationChange.pairingDraft.value.toString().contains("pair?draft"))
+        store.clear()
+    }
+
+    @Test
+    fun successfulScanSubmissionUsesCurrentDraftDeviceName() = runTest(dispatcher) {
+        val fake = FakeCoordinator(null).apply {
+            submitResult = pendingIdentity()
+            approvalResult = CompletableDeferred()
+        }
+        val viewModel = MainViewModel(fake, dispatcher, "默认手机") { NOW }
+        runCurrent()
+        viewModel.updateDeviceName("当前设备名")
+        val scanned =
+            "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${"a".repeat(43)}"
+
+        assertTrue(viewModel.updatePairingLinkFromScan(scanned))
+        viewModel.submit()
+        runCurrent()
+
+        assertEquals("当前设备名", fake.lastSubmittedName)
+        assertEquals(scanned, fake.lastSubmittedRawLink)
+    }
+
     private class FakeCoordinator(initialIdentity: DeviceIdentity?) : PairingCoordinator {
         var identity = initialIdentity
         var submitResult: DeviceIdentity? = null
@@ -234,11 +340,22 @@ class MainViewModelTest {
         var waitCancelled = false
         var clearIdentityOnWaitFailure = false
         var clearIdentityOnAuthFailure = false
+        var storedIdentityFailure: Throwable? = null
+        var readCalls = 0
+        var lastSubmittedName: String? = null
+        var lastSubmittedRawLink: String? = null
 
-        override fun storedIdentity(): DeviceIdentity? = identity
+        override fun storedIdentity(): DeviceIdentity? {
+            readCalls += 1
+            storedIdentityFailure?.let { throw it }
+            return identity
+        }
 
         override suspend fun submit(link: PairingLink, name: String): DeviceIdentity {
             submitCalls += 1
+            lastSubmittedName = name
+            lastSubmittedRawLink =
+                "framearchive://pair?v=1&server=http%3A%2F%2F192.168.1.70%3A8420&token=${link.token}"
             return requireNotNull(submitResult).also { identity = it }
         }
 

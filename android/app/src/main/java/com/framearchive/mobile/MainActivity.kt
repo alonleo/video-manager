@@ -35,8 +35,6 @@ import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private var pairingLinkDraft = ""
-    private var deviceNameDraft = defaultDeviceName()
     private var countdownJob: Job? = null
 
     private val viewModel: MainViewModel by viewModels {
@@ -48,17 +46,15 @@ class MainActivity : AppCompatActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(MainViewModel::class.java))
-                return MainViewModel(coordinator) as T
+                return MainViewModel(coordinator, initialDeviceName = defaultDeviceName()) as T
             }
         }
     }
 
     private val scanner: ActivityResultLauncher<ScanOptions> =
         registerForActivityResult(ScanContract()) { result ->
-            val scanned = result.contents?.trim().orEmpty()
-            if (scanned.isNotEmpty()) {
-                pairingLinkDraft = scanned
-                viewModel.submit(scanned, deviceNameDraft)
+            if (viewModel.updatePairingLinkFromScan(result.contents)) {
+                viewModel.submit()
             }
         }
 
@@ -92,20 +88,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPairing(errorMessage: String? = null) {
         val pairing = ViewPairingBinding.inflate(layoutInflater, binding.content, false)
-        pairing.deviceNameInput.setText(deviceNameDraft)
-        pairing.pairingLinkInput.setText(pairingLinkDraft)
+        val draft = viewModel.pairingDraft.value
+        pairing.deviceNameInput.setText(draft.deviceName)
+        pairing.pairingLinkInput.setText(draft.pairingLink)
         pairing.errorText.apply {
             text = errorMessage.orEmpty()
             visibility = if (errorMessage.isNullOrEmpty()) View.GONE else View.VISIBLE
         }
-        pairing.deviceNameInput.doAfterTextChanged { deviceNameDraft = it?.toString().orEmpty() }
-        pairing.pairingLinkInput.doAfterTextChanged { pairingLinkDraft = it?.toString().orEmpty() }
-        pairing.scanButton.setOnClickListener { launchScanner() }
-        pairing.submitButton.setOnClickListener {
-            pairingLinkDraft = pairing.pairingLinkInput.text?.toString().orEmpty()
-            deviceNameDraft = pairing.deviceNameInput.text?.toString().orEmpty()
-            viewModel.submit(pairingLinkDraft, deviceNameDraft)
+        pairing.deviceNameInput.doAfterTextChanged {
+            viewModel.updateDeviceName(it?.toString().orEmpty())
         }
+        pairing.pairingLinkInput.doAfterTextChanged {
+            viewModel.updatePairingLink(it?.toString().orEmpty())
+        }
+        pairing.scanButton.setOnClickListener { launchScanner() }
+        pairing.submitButton.setOnClickListener { viewModel.submit() }
         binding.content.addView(pairing.root)
     }
 
@@ -114,19 +111,21 @@ class MainActivity : AppCompatActivity() {
         val details = viewModel.approvalDetails.value
         approval.verificationCode.text = state.code.chunked(3).joinToString(" ")
         approval.serverHost.text = details?.serverHost ?: getString(R.string.unknown_server)
-        approval.deviceName.text = details?.deviceName ?: deviceNameDraft
+        approval.deviceName.text = details?.deviceName ?: viewModel.pairingDraft.value.deviceName
         approval.cancelButton.setOnClickListener { viewModel.cancelPairing() }
         binding.content.addView(approval.root)
         countdownJob = lifecycleScope.launch {
-            while (true) {
-                val seconds = max(0L, (state.expiresAt - System.currentTimeMillis() + 999L) / 1_000L)
-                approval.remainingTime.text = resources.getQuantityString(
-                    R.plurals.pairing_seconds_remaining,
-                    seconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                    seconds,
-                )
-                if (seconds == 0L) break
-                delay(1_000L)
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    val seconds = max(0L, (state.expiresAt - System.currentTimeMillis() + 999L) / 1_000L)
+                    approval.remainingTime.text = resources.getQuantityString(
+                        R.plurals.pairing_seconds_remaining,
+                        seconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        seconds,
+                    )
+                    if (seconds == 0L) break
+                    delay(1_000L)
+                }
             }
         }
     }
@@ -149,10 +148,6 @@ class MainActivity : AppCompatActivity() {
             setText(R.string.retry)
             setOnClickListener { viewModel.retry() }
         })
-        container.addView(Button(this).apply {
-            setText(R.string.pair_again)
-            setOnClickListener { viewModel.cancelPairing() }
-        })
         binding.content.addView(container)
     }
 
@@ -171,6 +166,7 @@ class MainActivity : AppCompatActivity() {
         text = message
         gravity = Gravity.CENTER
         textSize = 18f
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         setPadding(0, resources.getDimensionPixelSize(R.dimen.item_spacing), 0, 0)
     }
 

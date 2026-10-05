@@ -28,6 +28,7 @@
 
         <TextView
             android:id="@+id/verification_code"
+            android:accessibilityLiveRegion="polite"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/section_spacing"
@@ -50,6 +51,7 @@
 
         <TextView
             android:id="@+id/remaining_time"
+            android:accessibilityLiveRegion="polite"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/item_spacing" />

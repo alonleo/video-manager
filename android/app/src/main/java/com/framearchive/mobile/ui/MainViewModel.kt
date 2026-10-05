@@ -10,6 +10,8 @@ import com.framearchive.mobile.network.PairingRejected
 import com.framearchive.mobile.pairing.PairingCoordinator
 import com.framearchive.mobile.pairing.PairingLink
 import com.framearchive.mobile.storage.DeviceIdentity
+import com.framearchive.mobile.storage.IdentityStoreCorrupted
+import com.framearchive.mobile.storage.IdentityStoreUnavailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,10 +24,15 @@ import kotlinx.coroutines.yield
 import java.net.URI
 
 data class ApprovalDetails(val serverHost: String, val deviceName: String)
+data class PairingDraft(val pairingLink: String, val deviceName: String) {
+    override fun toString(): String =
+        "PairingDraft(pairingLink=<redacted>, deviceName=$deviceName)"
+}
 
 class MainViewModel(
     private val coordinator: PairingCoordinator,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    initialDeviceName: String = "",
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow<AppState>(AppState.NeedsPairing)
@@ -34,13 +41,41 @@ class MainViewModel(
     private val mutableApprovalDetails = MutableStateFlow<ApprovalDetails?>(null)
     val approvalDetails: StateFlow<ApprovalDetails?> = mutableApprovalDetails.asStateFlow()
 
+    private val mutablePairingDraft = MutableStateFlow(PairingDraft("", initialDeviceName))
+    val pairingDraft: StateFlow<PairingDraft> = mutablePairingDraft.asStateFlow()
+
     private var operation: Job? = null
 
     init {
         recover()
     }
 
+    fun updatePairingLink(value: String) {
+        mutablePairingDraft.value = mutablePairingDraft.value.copy(pairingLink = value)
+    }
+
+    fun updateDeviceName(value: String) {
+        mutablePairingDraft.value = mutablePairingDraft.value.copy(deviceName = value)
+    }
+
+    fun updatePairingLinkFromScan(contents: String?): Boolean {
+        val scanned = contents?.trim().orEmpty()
+        if (scanned.isEmpty()) return false
+        updatePairingLink(scanned)
+        return true
+    }
+
+    fun submit() {
+        val draft = mutablePairingDraft.value
+        submitDraft(draft.pairingLink, draft.deviceName)
+    }
+
     fun submit(rawLink: String, deviceName: String) {
+        mutablePairingDraft.value = PairingDraft(rawLink, deviceName)
+        submitDraft(rawLink, deviceName)
+    }
+
+    private fun submitDraft(rawLink: String, deviceName: String) {
         launchOperation {
             mutableState.value = AppState.Submitting
             val link = try {
@@ -85,6 +120,18 @@ class MainViewModel(
         launchOperation {
             val identity = try {
                 coordinator.storedIdentity()
+            } catch (_: IdentityStoreUnavailable) {
+                mutableState.value = AppState.RecoverableError(
+                    "设备身份暂时无法读取，请重试",
+                    true,
+                )
+                return@launchOperation
+            } catch (_: IdentityStoreCorrupted) {
+                mutableState.value = AppState.RecoverableError(
+                    "设备身份已损坏，请重新配对",
+                    false,
+                )
+                return@launchOperation
             } catch (error: Throwable) {
                 mutableState.value = AppState.RecoverableError("无法读取设备身份，请重新配对", false)
                 return@launchOperation
@@ -149,9 +196,14 @@ class MainViewModel(
                     false,
                 )
             }
-            is PairingExpired,
-            is DeviceRevoked,
-            -> {
+            is PairingExpired -> {
+                mutableApprovalDetails.value = null
+                mutableState.value = AppState.RecoverableError(
+                    "二维码已过期，请重新扫码",
+                    false,
+                )
+            }
+            is DeviceRevoked -> {
                 mutableApprovalDetails.value = null
                 mutableState.value = AppState.NeedsPairing
             }
