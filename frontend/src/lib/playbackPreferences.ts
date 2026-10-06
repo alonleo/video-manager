@@ -1,6 +1,7 @@
 export type PlaybackPreferences = {
   autoplayVideos: boolean;
   autoplayPhotos: boolean;
+  autoCropBlackBars: boolean;
   photoIntervalSeconds: number;
 };
 
@@ -9,6 +10,7 @@ export const PLAYBACK_PREFERENCES_KEY = "frame-archive-playback-preferences";
 export const DEFAULT_PLAYBACK_PREFERENCES: PlaybackPreferences = {
   autoplayVideos: false,
   autoplayPhotos: false,
+  autoCropBlackBars: false,
   photoIntervalSeconds: 5,
 };
 
@@ -23,6 +25,7 @@ export function readPlaybackPreferences(): PlaybackPreferences {
     return {
       autoplayVideos: saved.autoplayVideos === true,
       autoplayPhotos: saved.autoplayPhotos === true,
+      autoCropBlackBars: saved.autoCropBlackBars === true,
       photoIntervalSeconds: clampPhotoInterval(saved.photoIntervalSeconds),
     };
   } catch {

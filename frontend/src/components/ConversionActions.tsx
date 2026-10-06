@@ -26,8 +26,8 @@ export default function ConversionActions({ job }: { job: Job }) {
           <a className="btn-outline" href={`/api/jobs/${job.id}/file`} download={String(job.result.filename ?? "video") }>
             下载文件
           </a>
-          {job.result.replaced === true && <details className="conversion-backup">
-            <summary>已替换原视频 · 原片备份位置</summary>
+          {job.result.replaced === true && job.result.backup_path && <details className="conversion-backup">
+            <summary>{job.result.ts_repair === true ? "TS 时长已修复" : "已替换原视频"} · 原片备份位置</summary>
             <p>{String(job.result.backup_path ?? "")}</p>
           </details>}
         </>

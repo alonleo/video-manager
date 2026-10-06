@@ -5,9 +5,12 @@ import PlayerControls from "./PlayerControls";
 import { usePlayerCaptions } from "./PlayerCaptions";
 import WasmMedia from "./WasmMedia";
 import WasmCaptions from "./WasmCaptions";
+import { AutoBlackBarController } from "./blackBars";
 
 interface Props {
   autoplay?: boolean;
+  autoCropBlackBars?: boolean;
+  onAutoCropBlackBarsChange?: (enabled: boolean) => void;
   cinema?: boolean;
   onCinema?: () => void;
   info: PlaybackInfo;
@@ -18,7 +21,7 @@ interface Props {
   retrying?: boolean;
 }
 
-export default function VideoPlayer({ autoplay = false, cinema, onCinema, info, onProgress, onNeedRefresh }: Props) {
+export default function VideoPlayer({ autoplay = false, autoCropBlackBars = false, onAutoCropBlackBarsChange, cinema, onCinema, info, onProgress, onNeedRefresh }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<WasmMedia | null>(null);
@@ -34,6 +37,14 @@ export default function VideoPlayer({ autoplay = false, cinema, onCinema, info, 
   progressRef.current = onProgress;
   const startRef = useRef(info.start_position_ms);
   startRef.current = info.start_position_ms;
+
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface || !autoCropBlackBars) return;
+    const controller = new AutoBlackBarController(surface);
+    controller.start();
+    return () => controller.stop();
+  }, [autoCropBlackBars, info.video_id, attempt]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -124,7 +135,9 @@ export default function VideoPlayer({ autoplay = false, cinema, onCinema, info, 
         <button type="button" className="wasm-retry" onClick={retry}>重新加载</button>
       </div>}
       <PlayerControls videoRef={mediaRef} stageRef={stageRef} captions={captions}
-        unavailable={!ready || !!error} cinema={cinema} onCinema={onCinema} onVisibilityChange={setControlsVisible} />
+        unavailable={!ready || !!error} cinema={cinema} onCinema={onCinema}
+        autoCropBlackBars={autoCropBlackBars} onAutoCropBlackBarsChange={onAutoCropBlackBarsChange}
+        onVisibilityChange={setControlsVisible} />
     </div>
     <div className="wasm-player-status">
       <span><i aria-hidden="true" />独立解码 · 原文件播放</span>

@@ -26,7 +26,7 @@ import VideoTagPicker from "../components/VideoTagPicker";
 import BasicVideoActions from "../components/BasicVideoActions";
 import EnhanceVideoActions from "../components/EnhanceVideoActions";
 import { cn } from "../lib/cn";
-import { readPlaybackPreferences } from "../lib/playbackPreferences";
+import { readPlaybackPreferences, savePlaybackPreferences } from "../lib/playbackPreferences";
 import {
   formatDate,
   formatDuration,
@@ -61,7 +61,8 @@ export default function PlayerPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const automaticRefresh = useRef("");
   const [actionToolbar, setActionToolbar] = useState<HTMLDivElement | null>(null);
-  const autoplay = useState(() => readPlaybackPreferences().autoplayVideos)[0];
+  const [playbackPreferences, setPlaybackPreferences] = useState(readPlaybackPreferences);
+  const autoplay = playbackPreferences.autoplayVideos;
 
   const video = useQuery({
     queryKey: ["video", id],
@@ -252,6 +253,9 @@ export default function PlayerPage() {
           {playback.data ? (
             <VideoPlayer
               autoplay={autoplay}
+              autoCropBlackBars={playbackPreferences.autoCropBlackBars}
+              onAutoCropBlackBarsChange={enabled => setPlaybackPreferences(current =>
+                savePlaybackPreferences({ ...current, autoCropBlackBars: enabled }))}
               cinema={cinema}
               onCinema={() => setCinema(c => !c)}
               key={`${id}-${refreshKey}`}

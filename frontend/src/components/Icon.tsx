@@ -34,6 +34,7 @@ export type IconName =
   | "sidebarOpen"
   | "edit"
   | "convert"
+  | "crop"
   | "settings";
 const paths: Record<IconName, string> = {
   photo: "M3 4h18v16H3Z M3 16l5-5 4 4 3-3 6 6 M15 8h.01",
@@ -71,6 +72,7 @@ const paths: Record<IconName, string> = {
   edit: "m16 4 4 4 M4 20l4-1L20 7a2.12 2.12 0 0 0-3-3L4 17v3Z",
   download: "M12 3v12m-5-5 5 5 5-5 M4 15v6h16v-6",
   convert: "M4 7h16m-4-4 4 4-4 4 M20 17H4m4-4-4 4 4 4",
+  crop: "M6 3v15a2 2 0 0 0 2 2h13 M3 6h15a2 2 0 0 1 2 2v13 M10 10h10v10H10Z",
 };
 export default function Icon({
   name,

@@ -71,7 +71,9 @@ export function jobResultText(job: Job): string {
   if (job.kind === "enhance_video") return `${String(result.width)} × ${String(result.height)} · ${String(result.fps)} fps · 可以下载或加入影像库`;
   if (job.kind === "download_url") return (typeof result.filename === "string" ? result.filename + " · " : "") + "已加入影像库，可以播放了。";
   if (job.kind === "convert_format" && typeof result.filename === "string")
-    return `${result.filename}${result.replaced === true ? " · 已替换原视频" : " · 可以下载了"}`;
+    return result.ts_repair === true
+      ? `${result.filename} · TS 时长已修复${result.original_removed === true ? "，原片已移除" : ""}`
+      : `${result.filename}${result.replaced === true ? " · 已替换原视频" : " · 可以下载了"}`;
   if (job.kind === "scan_library") {
     const parts: string[] = [];
     if (typeof result.scanned === "number")

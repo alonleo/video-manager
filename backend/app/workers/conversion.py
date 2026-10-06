@@ -29,6 +29,11 @@ from app.services.conversion_media import (
 from app.services.conversion_replace import install_replacement, replacement_paths
 from app.services.operations import ConvertRequest, local_source, remux_command
 from app.services.probe import _run_ffprobe, parse_probe_json
+from app.services.ts_repair import (
+    inspect_ts_duration,
+    ts_repair_command,
+    validate_ts_repair_output,
+)
 
 _slots = asyncio.Semaphore(2)
 
@@ -217,9 +222,18 @@ async def run_conversion(ctx: dict, job_id: int) -> dict:
                 if body.subtitle_mode != "none" or body.format == "m2ts"
                 else None
             )
+            if job.payload.get("_ts_repair"):
+                command = ts_repair_command(source, partial, settings.ffmpeg_bin)
             await run_remux(source, partial, info.duration_ms, check, command=command)
             produced_raw = await _run_ffprobe(str(partial))
-            produced = validate_output(body, original_raw, produced_raw)
+            if job.payload.get("_ts_repair"):
+                validate_ts_repair_output(original_raw, produced_raw)
+                produced = parse_probe_json(produced_raw)
+                repaired = inspect_ts_duration(partial, produced_raw)
+                if repaired.needs_repair:
+                    raise ValueError("无损重封装后时长信息仍不一致，已保留原文件")
+            else:
+                produced = validate_output(body, original_raw, produced_raw)
             if fingerprint(source) != original_fingerprint:
                 raise ValueError("转换过程中原文件发生变化，已停止发布结果")
             await check(0.99)
@@ -237,6 +251,12 @@ async def run_conversion(ctx: dict, job_id: int) -> dict:
                 "subtitle_count": len(body.subtitle_track_ids) + len(body.source_subtitle_indices),
                 "replaced": False,
             }
+            if job.payload.get("_ts_repair"):
+                result.update({
+                    "ts_repair": True,
+                    "duration_before": job.payload.get("_duration_before"),
+                    "duration_after": repaired.__dict__,
+                })
             if body.replace_source:
                 async with SessionLocal() as session:
                     installation = asyncio.create_task(
@@ -253,7 +273,20 @@ async def run_conversion(ctx: dict, job_id: int) -> dict:
                         )
                     )
                     try:
-                        return await asyncio.shield(installation)
+                        installed = await asyncio.shield(installation)
+                        if job.payload.get("_ts_repair"):
+                            backup = Path(installed["backup_path"])
+                            await asyncio.to_thread(backup.unlink)
+                            installed.pop("backup_path", None)
+                            installed["original_removed"] = True
+                            await session.execute(
+                                update(Job).where(Job.id == job_id, Job.state == JobState.done).values(
+                                    result=installed,
+                                    message="TS 时长修复完成，已替换来源并移除原片",
+                                )
+                            )
+                            await session.commit()
+                        return installed
                     except asyncio.CancelledError:
                         await installation
                         raise

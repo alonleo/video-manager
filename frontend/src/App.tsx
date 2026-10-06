@@ -7,6 +7,8 @@ import TaskNotifications from "./components/TaskNotifications";
 import type { IconName } from "./components/Icon";
 import { cn } from "./lib/cn";
 import { shouldResetRouteScroll } from "./lib/routeScroll";
+import { getLibraryDestination, rememberLibraryDestination } from "./lib/libraryNavigation";
+import { rememberLibraryPosition } from "./lib/libraryPosition";
 
 function HealthStatus() {
   const health = useQuery({
@@ -93,6 +95,9 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarState);
   const previousPathname = useRef<string | null>(null);
   useLayoutEffect(() => {
+    rememberLibraryDestination(location);
+  }, [location.pathname, location.search, location.key]);
+  useLayoutEffect(() => {
     const previous = history.scrollRestoration;
     history.scrollRestoration = "manual";
     return () => {
@@ -170,6 +175,7 @@ export default function App() {
         <div className="sidebar-caption">你的私人影像资料馆</div>
         <nav aria-label="主导航" className="main-nav">
           {navigation.map((item) => {
+            const destination = getLibraryDestination(item.to, location);
             const active =
               item.to === "/"
                 ? location.pathname === "/" && !favorite
@@ -181,7 +187,11 @@ export default function App() {
             return (
               <Link
                 key={item.to}
-                to={item.to}
+                to={destination.to}
+                state={destination.state}
+                onClick={() => {
+                  if (libraryPath) rememberLibraryPosition(location.key, location.search);
+                }}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn("nav-item", active && "active")}

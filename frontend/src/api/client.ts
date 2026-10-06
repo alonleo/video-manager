@@ -245,6 +245,21 @@ export const listVideoConversions = (id: number) =>
   request<{ items: Job[]; total: number }>(
     `/jobs?kind=convert_format&video_id=${id}&limit=5`,
   );
+export type TsRepairInspection = {
+  source_id: number;
+  stream_duration: number | null;
+  format_duration: number | null;
+  difference: number | null;
+  needs_repair: boolean;
+  reason: string;
+};
+export const inspectTsRepair = (id: number, sourceId?: number) =>
+  request<TsRepairInspection>(`/videos/${id}/ts-repair${sourceId ? `?source_id=${sourceId}` : ""}`);
+export const repairTs = (id: number, sourceId: number | undefined, replaceSource: boolean) =>
+  request<Job>(`/videos/${id}/ts-repair`, {
+    method: "POST",
+    body: JSON.stringify({ source_id: sourceId, replace_source: replaceSource }),
+  });
 export const cancelJob = (id: number) =>
   request<Job>(`/jobs/${id}/cancel`, { method: "POST" });
 

@@ -2,6 +2,7 @@
  * Media controls backed by independent Wasm decoders, not HTMLMediaElement.
  * Async engine operations are serialized; superseded seeks are coalesced.
  */
+const RENDER_MODE_FIT = 0; // Preserve the whole frame, including in portrait fullscreen.
 const ENGINE_ROOT = "/player-engine/libmedia-1.3.1";
 type Stream = { mediaType: string; codecparProxy: { codecId: number; codecType: number }; metadata?: Record<string, unknown> };
 type Engine = {
@@ -61,7 +62,6 @@ export default class WasmMedia extends EventTarget {
   private gain = 1;
   private silent = false;
   private speed = 1;
-  private fullscreen = false;
   private pendingSeek: number | null = null;
   private seekQueued = false;
   private observer: ResizeObserver | null = null;
@@ -156,7 +156,7 @@ export default class WasmMedia extends EventTarget {
         preLoadTime: 1,
       });
       this.engine = engine;
-      engine.setRenderMode(this.fullscreen ? 1 : 0);
+      engine.setRenderMode(RENDER_MODE_FIT);
       // The pinned engine may otherwise force MSE in unsupported environments.
       // Refuse that fallback: this project requires independent decoding.
       Object.defineProperty(engine, "checkUseMSE", { value: async () => false });
@@ -251,9 +251,8 @@ export default class WasmMedia extends EventTarget {
       this.paused = true; this.emit("timeupdate"); this.emit("pause");
     }).catch(() => {});
   }
-  setFullscreen(fullscreen: boolean) {
-    this.fullscreen = fullscreen;
-    this.engine?.setRenderMode(fullscreen ? 1 : 0);
+  setFullscreen(_fullscreen: boolean) {
+    this.engine?.setRenderMode(RENDER_MODE_FIT);
   }
   async destroy() {
     if (this.disposed) return;

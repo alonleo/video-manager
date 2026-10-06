@@ -19,6 +19,7 @@ from app.db import get_session
 from app.main import app
 from app.models import Base, Job, JobState, Storage, StorageType, Video, VideoSource
 from app.services.operations import RenameRequest, rename_video
+from app.services.conversion_media import fingerprint
 from app.services.probe import _run_ffprobe, parse_probe_json
 from app.workers import conversion
 
@@ -161,6 +162,122 @@ async def test_source_must_be_inside_storage(env):
         await session.commit()
     response = await env.client.post(f"/api/videos/{env.vid}/convert", json={"format": "mkv"})
     assert response.status_code == 409
+
+
+async def test_ts_repair_inspection_and_output_choice(env, monkeypatch):
+    inspection = SimpleNamespace(
+        stream_duration=12.0,
+        format_duration=999.0,
+        difference=987.0,
+        needs_repair=True,
+        reason="需要修复",
+        __dict__={
+            "stream_duration": 12.0,
+            "format_duration": 999.0,
+            "difference": 987.0,
+            "needs_repair": True,
+            "reason": "需要修复",
+        },
+    )
+    monkeypatch.setattr(api, "inspect_ts_duration", lambda _path, _raw: inspection)
+    checked = await env.client.get(f"/api/videos/{env.vid}/ts-repair")
+    assert checked.status_code == 200
+    assert checked.json()["needs_repair"] is True
+
+    generated = await env.client.post(
+        f"/api/videos/{env.vid}/ts-repair", json={"replace_source": False}
+    )
+    assert generated.status_code == 202, generated.text
+    async with env.sessions() as session:
+        job = await session.get(Job, generated.json()["id"])
+        assert job.payload["_ts_repair"] is True
+        assert job.payload["replace_source"] is False
+
+
+async def test_ts_repair_can_replace_and_remove_original(env, monkeypatch):
+    inspection = SimpleNamespace(
+        needs_repair=True,
+        __dict__={
+            "stream_duration": None,
+            "format_duration": 12.0,
+            "difference": None,
+            "needs_repair": True,
+            "reason": "时长缺失",
+        },
+    )
+    monkeypatch.setattr(api, "inspect_ts_duration", lambda _path, _raw: inspection)
+    response = await env.client.post(
+        f"/api/videos/{env.vid}/ts-repair",
+        json={"source_id": env.sid, "replace_source": True},
+    )
+    assert response.status_code == 202, response.text
+    async with env.sessions() as session:
+        job = await session.get(Job, response.json()["id"])
+        assert job.payload["replace_source"] is True
+
+
+async def test_ts_repair_rejects_unneeded_and_unknown_fields(env, monkeypatch):
+    inspection = SimpleNamespace(
+        needs_repair=False,
+        __dict__={
+            "stream_duration": 12.0,
+            "format_duration": 12.01,
+            "difference": 0.01,
+            "needs_repair": False,
+            "reason": "无需修复",
+        },
+    )
+    monkeypatch.setattr(api, "inspect_ts_duration", lambda _path, _raw: inspection)
+    response = await env.client.post(
+        f"/api/videos/{env.vid}/ts-repair", json={"replace_source": False}
+    )
+    assert response.status_code == 409
+    invalid = await env.client.post(
+        f"/api/videos/{env.vid}/ts-repair", json={"replace_source": False, "command": "rm"}
+    )
+    assert invalid.status_code == 422
+
+
+async def test_ts_repair_replacement_removes_original_after_verified_install(env):
+    ts_path = env.path.with_suffix(".ts")
+    subprocess.run(
+        [settings.ffmpeg_bin, "-v", "error", "-i", str(env.path), "-map", "0", "-c", "copy", str(ts_path)],
+        check=True,
+    )
+    env.path.unlink()
+    async with env.sessions() as session:
+        source = await session.get(VideoSource, env.sid)
+        source.local_path, source.uri = str(ts_path), f"local:{ts_path}"
+        job = Job(
+            kind="convert_format",
+            video_id=env.vid,
+            state=JobState.queued,
+            payload={
+                "format": "ts",
+                "source_id": env.sid,
+                "subtitle_mode": "none",
+                "subtitle_track_ids": [],
+                "source_subtitle_indices": [],
+                "bilingual": False,
+                "replace_source": True,
+                "_source_fingerprint": fingerprint(ts_path),
+                "_subtitle_versions": {},
+                "_ts_repair": True,
+                "_duration_before": {},
+            },
+        )
+        session.add(job)
+        await session.commit()
+        await session.refresh(job)
+        job_id = job.id
+
+    result = await conversion.run_conversion({}, job_id)
+    assert result["replaced"] is True
+    assert result["original_removed"] is True
+    assert "backup_path" not in result
+    assert ts_path.is_file()
+    backup = ts_path.parent / ".video-manage-backups" / f"conversion-{job_id}" / "original" / ts_path.name
+    assert not backup.exists()
 
 
 @pytest.mark.parametrize("extension", ["mp4", "mkv", "mov", "ts"])

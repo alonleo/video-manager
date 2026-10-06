@@ -51,7 +51,7 @@ export default function SettingsPage() {
     <div className="page-heading"><div>
       <p className="eyebrow"><span /> PREFERENCES · 设置</p>
       <h1>{isDevices ? "让访问，止于信任。" : isPlayback ? "让播放，按你的节奏。" : "字幕与语言，随心设定。"}</h1>
-      <p className="page-intro">{isDevices ? "通过二维码添加设备，只有经你确认的浏览器才能访问影像内容。" : isPlayback ? "设置视频自动播放与图片自动轮播，等待时间也由你决定。" : "管理视频字幕、翻译与 AI 模型。播放时，在底部控制栏随时切换。"}</p>
+      <p className="page-intro">{isDevices ? "通过二维码添加设备，只有经你确认的浏览器才能访问影像内容。" : isPlayback ? "设置自动播放、图片轮播与视频画面适配。" : "管理视频字幕、翻译与 AI 模型。播放时，在底部控制栏随时切换。"}</p>
     </div></div>
     <nav className="settings-tabs" aria-label="设置模块">
       <Link to={"/settings" + suffix} aria-current={!isAI && !isPlayback && !isDevices ? "page" : undefined}>字幕与翻译</Link>

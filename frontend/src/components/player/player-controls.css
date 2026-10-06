@@ -9,6 +9,7 @@
 .player-control-button:hover, .player-control-button[aria-expanded=true] { background: #ffffff20; color: #f7cfab; }
 .player-control-button:disabled { opacity: .4; cursor: not-allowed; }
 .player-control-button.captions-active { color: #f7cfab; }
+.player-control-button.player-control-active { color: #f7cfab; background: #b7784438; }
 .player-control-spacer { flex: 1; min-width: 0; }
 .player-time { display: flex; flex-shrink: 0; gap: 6px; font-size: 11px; color: #d4d7da; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .player-time span { color: white; }
@@ -94,7 +95,7 @@
 
 /* Independent decoder surface; no native video element is used. */
 .wasm-player-surface, .wasm-engine-mount { position: absolute; inset: 0; overflow: hidden; }
-.wasm-engine-mount canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.wasm-engine-mount canvas { display: block; width: 100%; height: 100%; object-fit: contain; transition: transform .22s ease; }
 .wasm-player-overlay { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; padding: 24px 24px 78px; text-align: center; background: #090b0de8; }
 .wasm-player-overlay h3 { font-size: 17px; font-weight: 600; }
 .wasm-player-overlay p { max-width: 540px; font-size: 13px; line-height: 1.6; color: #ddd; overflow-wrap: anywhere; }
@@ -112,7 +113,7 @@
   .wasm-player-overlay { padding: 12px 12px 62px; gap: 8px; }
   .wasm-player-overlay p { font-size: 11px; }
 }
-@media (prefers-reduced-motion: reduce) { .wasm-loading-ring { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .wasm-loading-ring { animation: none; } .wasm-engine-mount canvas { transition: none; } }
 
 .player-subtitle-actions { padding: 12px 4px; border-bottom: 1px solid #ffffff1c; }
 .player-subtitle-action-buttons { display: flex; gap: 8px; }
@@ -133,3 +134,13 @@
 .subtitle-options-save { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .subtitle-options-save > button { flex-shrink: 0; }
 @media (max-width: 700px) { .subtitle-options-save { align-items: stretch; flex-direction: column; } }
+
+/* Portrait settings use the viewport, outside the short video container. */
+.player-settings-backdrop { position: fixed; inset: 0; z-index: 1000; background: #0008; display: flex; align-items: flex-end; justify-content: center; padding: 12px; }
+.player-settings-sheet { width: 100%; max-width: 520px; max-height: min(80dvh, 680px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ffffff29; border-radius: 16px; background: #202323; color: #f8f8f8; box-shadow: 0 12px 36px #0008; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.player-settings-sheet-header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px 8px 18px; border-bottom: 1px solid #ffffff1c; font-size: 14px; font-weight: 600; }
+.player-settings-sheet-header button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; color: #fff; }
+.player-settings-sheet-header button:hover { background: #ffffff15; }
+.player-settings-sheet .player-control-menu { position: static; width: 100%; max-width: none; max-height: none; min-height: 0; margin: 0; padding: 12px; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.player-settings-sheet :is(button, a, input, select):focus-visible { outline: 2px solid #f7cfab; outline-offset: -2px; }
+.player-settings-sheet .player-speed-options button { min-height: 44px; }

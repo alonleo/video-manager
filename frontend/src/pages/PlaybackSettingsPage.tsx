@@ -25,6 +25,11 @@ export default function PlaybackSettingsPage() {
         onChange={event => update({ autoplayVideos: event.target.checked })} />
     </label>
     <label className="playback-setting-row">
+      <span><strong>自动检测并拉伸黑边</strong><small>播放时自动识别画面四周的黑边，稳定确认后拉伸有效画面以填满播放区域。</small></span>
+      <input type="checkbox" role="switch" checked={preferences.autoCropBlackBars}
+        onChange={event => update({ autoCropBlackBars: event.target.checked })} />
+    </label>
+    <label className="playback-setting-row">
       <span><strong>图片自动轮播</strong><small>在照片浏览模式中自动切换到下一张，到达末尾后回到第一张。</small></span>
       <input type="checkbox" role="switch" checked={preferences.autoplayPhotos}
         onChange={event => update({ autoplayPhotos: event.target.checked })} />
