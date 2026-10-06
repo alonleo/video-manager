@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   createPairing,
   decidePairing,
+  getDeviceAuthStatus,
   getPairing,
   getPairingOrigins,
   listPendingPairings,
@@ -155,10 +156,17 @@ export default function TrustedDevicesPage() {
   const qc = useQueryClient();
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [dismissedPairingId, setDismissedPairingId] = useState<number | null>(null);
-  const devices = useQuery({ queryKey: ["trusted-devices"], queryFn: listTrustedDevices });
+  const access = useQuery({ queryKey: ["device-auth-status"], queryFn: getDeviceAuthStatus });
+  const canManage = access.data?.device?.is_bootstrap === true;
+  const devices = useQuery({
+    queryKey: ["trusted-devices"],
+    queryFn: listTrustedDevices,
+    enabled: canManage,
+  });
   const pendingPairings = useQuery({
     queryKey: ["pending-device-pairings"],
     queryFn: listPendingPairings,
+    enabled: canManage,
     refetchInterval: 3000,
   });
   useEffect(() => {
@@ -177,6 +185,12 @@ export default function TrustedDevicesPage() {
       await qc.invalidateQueries({ queryKey: ["trusted-devices"] });
     },
   });
+
+  if (access.isLoading) return <section className="card trusted-devices-intro"><p role="status">正在确认设备管理权限…</p></section>;
+  if (access.isError) return <section className="card trusted-devices-intro"><div><h2>暂时无法确认权限</h2><p>{access.error.message}</p></div><button className="btn-outline" type="button" onClick={() => access.refetch()}>重试</button></section>;
+  if (!canManage) return <section className="card trusted-devices-intro">
+    <div><h2>信任设备由初始设备管理</h2><p>当前设备可以访问影像内容，但不能查看、添加或移除其他信任设备。请回到最初在服务器本机完成设置的设备进行管理。</p></div>
+  </section>;
 
   return <div className="trusted-devices">
     <section className="card trusted-devices-intro">

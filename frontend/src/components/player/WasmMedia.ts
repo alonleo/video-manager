@@ -20,6 +20,7 @@ type Engine = {
   setVolume(volume: number): void;
   setPlaybackRate(rate: number): void;
   setSubtitleEnable(enabled: boolean): void;
+  setRenderMode(mode: number): void;
   resize(width: number, height: number): void;
   isMSE(): boolean;
   on(event: string, callback: (...args: unknown[]) => void): void;
@@ -60,6 +61,7 @@ export default class WasmMedia extends EventTarget {
   private gain = 1;
   private silent = false;
   private speed = 1;
+  private fullscreen = false;
   private pendingSeek: number | null = null;
   private seekQueued = false;
   private observer: ResizeObserver | null = null;
@@ -154,6 +156,7 @@ export default class WasmMedia extends EventTarget {
         preLoadTime: 1,
       });
       this.engine = engine;
+      engine.setRenderMode(this.fullscreen ? 1 : 0);
       // The pinned engine may otherwise force MSE in unsupported environments.
       // Refuse that fallback: this project requires independent decoding.
       Object.defineProperty(engine, "checkUseMSE", { value: async () => false });
@@ -247,6 +250,10 @@ export default class WasmMedia extends EventTarget {
       if (this.engine && this.initialized) this.position = Math.max(0, Number(this.engine.currentTime) / 1000 - this.timelineOffset);
       this.paused = true; this.emit("timeupdate"); this.emit("pause");
     }).catch(() => {});
+  }
+  setFullscreen(fullscreen: boolean) {
+    this.fullscreen = fullscreen;
+    this.engine?.setRenderMode(fullscreen ? 1 : 0);
   }
   async destroy() {
     if (this.disposed) return;

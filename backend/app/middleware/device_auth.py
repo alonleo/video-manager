@@ -51,6 +51,10 @@ class TrustedDeviceMiddleware(BaseHTTPMiddleware):
                     {"detail": "此设备尚未获得访问授权"}, status_code=401
                 )
             request.state.trusted_device = device
+            if path.startswith("/api/trusted-devices") and not device.is_bootstrap:
+                return JSONResponse(
+                    {"detail": "只有初始设备可以管理信任设备"}, status_code=403
+                )
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             if not trusted_origin(request):
                 return JSONResponse({"detail": "请求来源不受信任"}, status_code=403)

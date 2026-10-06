@@ -204,6 +204,63 @@ async def test_android_private_http_pairing_authentication_and_revocation(auth_e
 
 
 @pytest.mark.asyncio
+async def test_non_bootstrap_device_cannot_manage_trusted_devices(auth_env):
+    local, remote = auth_env
+    _, admin_public = device_key()
+    admin = (
+        await local.post(
+            "/api/device-auth/bootstrap",
+            json={"name": "初始设备", "public_key": admin_public},
+        )
+    ).json()
+    pairing = (await local.post("/api/trusted-devices/pairings")).json()
+    remote_private, remote_public = device_key()
+    claim = (
+        await remote.post(
+            "/api/device-auth/pair",
+            json={"token": pairing["token"], "name": "普通手机", "public_key": remote_public},
+        )
+    ).json()
+    assert (
+        await local.post(f"/api/trusted-devices/pairings/{pairing['id']}/approve")
+    ).status_code == 200
+    challenge = (
+        await remote.post(
+            "/api/device-auth/challenge", json={"device_id": claim["device_id"]}
+        )
+    ).json()["challenge"]
+    assert (
+        await remote.post(
+            "/api/device-auth/verify",
+            json={
+                "device_id": claim["device_id"],
+                "challenge": challenge,
+                "signature": sign(remote_private, challenge),
+            },
+        )
+    ).status_code == 200
+
+    protected_requests = [
+        remote.get("/api/trusted-devices"),
+        remote.get("/api/trusted-devices/pairings"),
+        remote.post("/api/trusted-devices/pairings"),
+        remote.patch(
+            f"/api/trusted-devices/{admin['id']}", json={"name": "被篡改的名称"}
+        ),
+        remote.delete(f"/api/trusted-devices/{admin['id']}"),
+    ]
+    responses = await asyncio.gather(*protected_requests)
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403]
+    assert all(
+        response.json()["detail"] == "只有初始设备可以管理信任设备"
+        for response in responses
+    )
+    assert (await remote.get("/api/videos")).status_code == 200
+    assert (await local.get("/api/trusted-devices")).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_browser_cannot_pair_over_http_from_private_address_by_default(auth_env):
     local, _ = auth_env
     await bootstrap_admin(local)

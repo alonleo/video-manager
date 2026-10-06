@@ -74,7 +74,13 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
     };
     const events = ["loadedmetadata", "durationchange", "timeupdate", "progress", "play", "pause", "ended", "volumechange", "ratechange", "emptied"];
     events.forEach(e => v.addEventListener(e, sync));
-    const full = () => { setFullscreen(document.fullscreenElement === stage); setMenu(null); reveal(); };
+    const full = () => {
+      const active = document.fullscreenElement === stage;
+      v.setFullscreen(active);
+      setFullscreen(active);
+      setMenu(null);
+      reveal();
+    };
     const click = () => { void togglePlay(); };
     const double = () => { void toggleFullscreen(); };
     const keys = (e: KeyboardEvent) => {
@@ -97,6 +103,7 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
     const surface = stage.querySelector("[data-player-surface]");
     surface?.addEventListener("click", click); surface?.addEventListener("dblclick", double);
     document.addEventListener("fullscreenchange", full);
+    full();
     sync();
     return () => {
       resize.disconnect();

@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var browserBinding: ViewBrowserBinding? = null
     private var browserOpen: SessionOpen? = null
+    private var normalCutoutMode: Int? = null
     private val fullscreenSession =
         FullscreenSession<View, WebChromeClient.CustomViewCallback> { it.onCustomViewHidden() }
 
@@ -183,6 +185,7 @@ class MainActivity : AppCompatActivity() {
         callback: WebChromeClient.CustomViewCallback,
     ) {
         if (!fullscreenSession.show(view, callback)) return
+        allowFullscreenInDisplayCutout()
         (view.parent as? ViewGroup)?.removeView(view)
         binding.content.addView(
             view,
@@ -196,7 +199,16 @@ class MainActivity : AppCompatActivity() {
         view.post(::hideSystemBars)
     }
 
+    @Suppress("DEPRECATION")
     private fun hideSystemBars() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -204,13 +216,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun allowFullscreenInDisplayCutout() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val attributes = window.attributes
+        if (normalCutoutMode == null) normalCutoutMode = attributes.layoutInDisplayCutoutMode
+        attributes.layoutInDisplayCutoutMode =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        window.attributes = attributes
+    }
+
+    private fun restoreDisplayCutoutMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val mode = normalCutoutMode ?: return
+        val attributes = window.attributes
+        attributes.layoutInDisplayCutoutMode = mode
+        window.attributes = attributes
+        normalCutoutMode = null
+    }
+
     private fun hideFullscreen() {
         val view = fullscreenSession.currentView ?: return
         (view.parent as? ViewGroup)?.removeView(view)
         fullscreenSession.hide()
         WindowCompat.setDecorFitsSystemWindows(window, true)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
         WindowCompat.getInsetsController(window, window.decorView)
             .show(WindowInsetsCompat.Type.systemBars())
+        restoreDisplayCutoutMode()
     }
 
     private fun renderPairing(errorMessage: String? = null) {
