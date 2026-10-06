@@ -1,5 +1,6 @@
 package com.framearchive.mobile
 
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -304,6 +305,16 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.onHostResumed()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val fullscreenView = fullscreenSession.currentView ?: return
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
+        fullscreenView.post {
+            if (fullscreenSession.currentView === fullscreenView) hideSystemBars()
+        }
     }
 
     override fun onDestroy() {
