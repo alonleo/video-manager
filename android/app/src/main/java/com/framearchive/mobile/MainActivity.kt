@@ -4,11 +4,16 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -23,6 +28,7 @@ import com.framearchive.mobile.databinding.ViewStatusBinding
 import com.framearchive.mobile.pairing.PairingRepository
 import com.framearchive.mobile.storage.EncryptedIdentityStore
 import com.framearchive.mobile.ui.AppState
+import com.framearchive.mobile.ui.FullscreenSession
 import com.framearchive.mobile.ui.MainUiState
 import com.framearchive.mobile.ui.MainViewModel
 import com.framearchive.mobile.web.SessionOpen
@@ -41,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var browserBinding: ViewBrowserBinding? = null
     private var browserOpen: SessionOpen? = null
+    private val fullscreenSession =
+        FullscreenSession<View, WebChromeClient.CustomViewCallback> { it.onCustomViewHidden() }
 
     private val webSessionBridge: WebSessionBridge by lazy {
         WebSessionBridge(
@@ -52,6 +60,8 @@ class MainActivity : AppCompatActivity() {
             onDownloadQueued = { toast(R.string.download_queued) },
             onDownloadCompleted = { toast(R.string.download_completed) },
             onDownloadFailed = { toast(R.string.download_failed) },
+            onShowFullscreen = ::showFullscreen,
+            onHideFullscreen = ::hideFullscreen,
         )
     }
 
@@ -85,6 +95,10 @@ class MainActivity : AppCompatActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
+                    if (fullscreenSession.currentView != null) {
+                        hideFullscreen()
+                        return
+                    }
                     val webView = browserBinding?.webView
                     if (webView?.canGoBack() == true) webView.goBack() else finish()
                 }
@@ -148,6 +162,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun disposeBrowser() {
+        hideFullscreen()
         browserOpen?.cancel()
         browserOpen = null
         browserBinding?.root?.let { root ->
@@ -160,6 +175,41 @@ class MainActivity : AppCompatActivity() {
             destroy()
         }
         browserBinding = null
+    }
+
+    private fun showFullscreen(
+        view: View,
+        callback: WebChromeClient.CustomViewCallback,
+    ) {
+        if (!fullscreenSession.show(view, callback)) return
+        (view.parent as? ViewGroup)?.removeView(view)
+        binding.content.addView(
+            view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
+        view.post(::hideSystemBars)
+    }
+
+    private fun hideSystemBars() {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun hideFullscreen() {
+        val view = fullscreenSession.currentView ?: return
+        (view.parent as? ViewGroup)?.removeView(view)
+        fullscreenSession.hide()
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.getInsetsController(window, window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
     }
 
     private fun renderPairing(errorMessage: String? = null) {

@@ -10,6 +10,7 @@ import VideoTagPicker from "../components/VideoTagPicker";
 import Icon from "../components/Icon";
 import { formatDate, formatSize } from "../lib/format";
 import { readPlaybackPreferences } from "../lib/playbackPreferences";
+import { focusWithoutScroll } from "../lib/routeScroll";
 
 type Neighbor = { photo: VideoListItem; page: number } | null;
 const PHOTO_DETAIL_STALE_TIME = 30_000;
@@ -58,6 +59,7 @@ function PhotoViewer({ id, version, title, previous, next, first, autoplay, inte
   useEffect(() => {
     const node = viewport.current;
     if (!node) return;
+    focusWithoutScroll(node);
     const observer = new ResizeObserver(([entry]) => setBounds({ w: entry.contentRect.width, h: entry.contentRect.height }));
     observer.observe(node);
     return () => observer.disconnect();
@@ -103,7 +105,7 @@ function PhotoViewer({ id, version, title, previous, next, first, autoplay, inte
   const changeZoom = (value: number) => setZoom(Math.max(0.25, Math.min(8, value)));
 
   return <section className="photo-viewer" ref={viewer} aria-label="照片预览">
-    <div className="photo-viewport" ref={viewport} tabIndex={0} autoFocus aria-label="照片画布，按左右方向键切换，按加减键缩放，按 R 旋转"
+    <div className="photo-viewport" ref={viewport} tabIndex={0} aria-label="照片画布，按左右方向键切换，按加减键缩放，按 R 旋转"
       onKeyDown={e => {
         if (e.key === "ArrowLeft" && previous) { e.preventDefault(); onNavigate(previous); }
         else if (e.key === "ArrowRight" && next) { e.preventDefault(); onNavigate(next); }

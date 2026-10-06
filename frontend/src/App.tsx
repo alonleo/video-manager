@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getHealth } from "./api/client";
@@ -6,6 +6,7 @@ import Icon from "./components/Icon";
 import TaskNotifications from "./components/TaskNotifications";
 import type { IconName } from "./components/Icon";
 import { cn } from "./lib/cn";
+import { shouldResetRouteScroll } from "./lib/routeScroll";
 
 function HealthStatus() {
   const health = useQuery({
@@ -90,6 +91,7 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarState);
+  const previousPathname = useRef<string | null>(null);
   useLayoutEffect(() => {
     const previous = history.scrollRestoration;
     history.scrollRestoration = "manual";
@@ -98,9 +100,10 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    const query = new URLSearchParams(location.search);
-    if (location.pathname !== "/" && location.pathname !== "/photos" && !query.has("focus") && !query.has("add"))
+    if (shouldResetRouteScroll(previousPathname.current, location.pathname, location.search)) {
       window.scrollTo({ top: 0, behavior: "instant" });
+    }
+    previousPathname.current = location.pathname;
   }, [location.pathname]);
   const favorite =
     new URLSearchParams(location.search).get("favorite") === "true";

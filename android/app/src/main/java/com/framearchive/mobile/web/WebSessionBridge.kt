@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.PermissionRequest
@@ -42,6 +43,8 @@ class WebSessionBridge(
     private val onDownloadQueued: () -> Unit,
     private val onDownloadCompleted: () -> Unit,
     private val onDownloadFailed: () -> Unit,
+    private val onShowFullscreen: (View, WebChromeClient.CustomViewCallback) -> Unit,
+    private val onHideFullscreen: () -> Unit,
 ) {
     private val dataOperations = SHARED_DATA_OPERATIONS
     private val downloadClient = OkHttpClient()
@@ -138,6 +141,14 @@ class WebSessionBridge(
             safeBrowsingEnabled = true
         }
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                onShowFullscreen(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                onHideFullscreen()
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 request.deny()
             }
