@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button, Input } from "@arco-design/web-react";
 import { getPairClaimStatus, requestDevicePairing, type PairClaim } from "../api/deviceAuth";
 import {
   authenticateDevice,
@@ -77,9 +78,9 @@ export default function PairDevicePage() {
       <a className="btn-outline" href="/">返回首页</a>
     </> : <>
       <p>此设备会在浏览器中生成不可导出的私钥。已有信任设备批准后才能访问影像内容。</p>
-      <label>设备名称<input className="input" value={name} maxLength={80} onChange={event => setName(event.target.value)} /></label>
+      <label>设备名称<Input value={name} maxLength={80} allowClear onChange={value => setName(value)} /></label>
       {error && <p className="inline-alert" role="alert">{error}</p>}
-      <button className="btn-primary" disabled={busy || !name.trim()} onClick={submit}>{busy ? "正在生成设备密钥…" : "申请添加设备"}</button>
+      <Button type="primary" loading={busy} disabled={!name.trim()} onClick={submit}>申请添加设备</Button>
     </>}
     {error && claim && <p className="inline-alert" role="alert">{error}</p>}
   </section></main>;

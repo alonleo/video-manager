@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Button, Input, Pagination } from "@arco-design/web-react";
 import { getVideo, listVideos } from "../api/client";
 import { getSubtitleStatuses } from "../api/subtitles";
 import SubtitleStatusBadges from "../components/player/SubtitleStatusBadges";
@@ -71,7 +72,7 @@ export default function SettingsPage() {
         {video.data && <div className="settings-selected-video">
           <strong>{video.data.title}</strong>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-ghost" onClick={() => setPicking(v => !v)}>{picking ? "收起选择" : "切换视频"}</button>
+            <Button size="small" onClick={() => setPicking(v => !v)}>{picking ? "收起选择" : "切换视频"}</Button>
             <Link to={"/videos/" + videoId} className="btn-outline"><Icon name="play" size={15} /> 返回播放</Link>
           </div>
         </div>}
@@ -80,20 +81,20 @@ export default function SettingsPage() {
         </div>}
         {statuses.isError && <div className="settings-subtitle-status-error" role="alert">
           字幕状态暂时无法更新，请重试。
-          <button className="btn-ghost" onClick={() => statuses.refetch()} disabled={statuses.isFetching}>刷新状态</button>
+          <Button size="small" onClick={() => statuses.refetch()} loading={statuses.isFetching}>刷新状态</Button>
         </div>}
         {video.isLoading && !!videoId && <p role="status">正在读取视频…</p>}
         {video.isError && <p className="inline-alert" role="alert">视频读取失败：{video.error.message}
-          <button className="btn-ghost" onClick={() => video.refetch()}>重试</button>
-          <button className="btn-ghost" onClick={() => setParams({})}>重新选择</button>
+          <Button size="small" onClick={() => video.refetch()}>重试</Button>
+          <Button size="small" onClick={() => setParams({})}>重新选择</Button>
         </p>}
         {(!videoId || picking) && <>
           <form className="settings-video-search" onSubmit={e => { e.preventDefault(); setQuery(search.trim()); setPage(1); }}>
-            <label>选择视频<input className="input" type="search" placeholder="搜索视频名称" value={search} onChange={e => setSearch(e.target.value)} /></label>
-            <button className="btn-outline">搜索</button>
+            <label>选择视频<Input.Search placeholder="搜索视频名称" value={search}
+              onChange={setSearch} onSearch={() => { setQuery(search.trim()); setPage(1); }} /></label>
           </form>
           {videos.isLoading && <p className="ai-hint" role="status">正在读取视频列表…</p>}
-          {videos.isError && <p className="inline-alert" role="alert">{videos.error.message}<button className="btn-ghost" onClick={() => videos.refetch()}>重试</button></p>}
+          {videos.isError && <p className="inline-alert" role="alert">{videos.error.message}<Button size="small" onClick={() => videos.refetch()}>重试</Button></p>}
           {videos.data && !videos.data.items.length && <p className="ai-hint">没有找到视频，请调整关键词或先添加视频。</p>}
           <div className="settings-video-results">
             {videos.data?.items.map(v => <button type="button" key={v.id} className="settings-video-row"
@@ -107,9 +108,8 @@ export default function SettingsPage() {
             </button>)}
           </div>
           {videos.data && videos.data.total > 8 && <div className="flex items-center gap-3 mt-3">
-            <button className="btn-ghost" disabled={page === 1 || videos.isFetching} onClick={() => setPage(p => p - 1)}>上一页</button>
-            <span className="text-xs text-muted">第 {page} / {Math.ceil(videos.data.total / 8)} 页</span>
-            <button className="btn-ghost" disabled={page * 8 >= videos.data.total || videos.isFetching} onClick={() => setPage(p => p + 1)}>下一页</button>
+            <Pagination total={videos.data.total} pageSize={8} current={page} sizeCanChange={false}
+              onChange={p => setPage(p)} size="small" />
           </div>}
         </>}
       </section>

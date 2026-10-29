@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { InputNumber, Switch } from "@arco-design/web-react";
 import {
   readPlaybackPreferences,
   savePlaybackPreferences,
@@ -21,24 +22,26 @@ export default function PlaybackSettingsPage() {
     </div>
     <label className="playback-setting-row">
       <span><strong>视频自动播放</strong><small>打开视频详情后，播放器准备完成便自动开始。</small></span>
-      <input type="checkbox" role="switch" checked={preferences.autoplayVideos}
-        onChange={event => update({ autoplayVideos: event.target.checked })} />
+      <Switch checked={preferences.autoplayVideos}
+        onChange={checked => update({ autoplayVideos: checked })} />
     </label>
     <label className="playback-setting-row">
       <span><strong>自动检测并拉伸黑边</strong><small>播放时自动识别画面四周的黑边，稳定确认后拉伸有效画面以填满播放区域。</small></span>
-      <input type="checkbox" role="switch" checked={preferences.autoCropBlackBars}
-        onChange={event => update({ autoCropBlackBars: event.target.checked })} />
+      <Switch checked={preferences.autoCropBlackBars}
+        onChange={checked => update({ autoCropBlackBars: checked })} />
     </label>
     <label className="playback-setting-row">
       <span><strong>图片自动轮播</strong><small>在照片浏览模式中自动切换到下一张，到达末尾后回到第一张。</small></span>
-      <input type="checkbox" role="switch" checked={preferences.autoplayPhotos}
-        onChange={event => update({ autoplayPhotos: event.target.checked })} />
+      <Switch checked={preferences.autoplayPhotos}
+        onChange={checked => update({ autoplayPhotos: checked })} />
     </label>
     <label className="playback-interval-field">
       <span><strong>每张图片等待时间</strong><small>可设置 1–60 秒。</small></span>
-      <span className="playback-interval-input"><input className="input" type="number" min="1" max="60" step="1"
-        disabled={!preferences.autoplayPhotos} value={preferences.photoIntervalSeconds}
-        onChange={event => update({ photoIntervalSeconds: Number(event.target.value) })} /><span>秒</span></span>
+      <span className="playback-interval-input">
+        <InputNumber mode="button" min={1} max={60} step={1}
+          disabled={!preferences.autoplayPhotos} value={preferences.photoIntervalSeconds}
+          onChange={value => update({ photoIntervalSeconds: Number(value) })} />
+        <span>秒</span></span>
     </label>
     {saved && <p className="playback-settings-saved" role="status">设置已保存</p>}
   </section>;
