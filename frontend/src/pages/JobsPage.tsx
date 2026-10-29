@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Alert, Button, Empty, Radio, Spin, Tag } from "@arco-design/web-react";
+import { IconRefresh } from "@arco-design/web-react/icon";
 import { getJob, listJobs } from "../api/client";
 import type { Job } from "../api/types";
 import Icon from "../components/Icon";
@@ -14,11 +16,11 @@ import { formatRelative } from "../lib/format";
 import { JOB_KIND_LABEL as KIND_LABEL } from "../lib/jobNotifications";
 
 const STATE_STYLE: Record<Job["state"], string> = {
-  queued: "bg-slate-500/15 text-slate-300",
-  running: "bg-sky-500/15 text-sky-400",
-  done: "bg-emerald-500/15 text-emerald-400",
-  error: "bg-red-500/15 text-red-400",
-  canceled: "bg-amber-500/15 text-amber-400",
+  queued: "gray",
+  running: "blue",
+  done: "green",
+  error: "red",
+  canceled: "orange",
 };
 const STATE_LABEL: Record<Job["state"], string> = {
   queued: "排队中",
@@ -54,8 +56,8 @@ function JobRow({ job }: { job: Job }) {
       {job.video_id && (
         <span className="text-xs text-muted">视频 #{job.video_id}</span>
       )}
-      <span className={cn("chip", STATE_STYLE[job.state])}>
-        {STATE_LABEL[job.state]}
+      <span className={cn("chip")}>
+        <Tag color={STATE_STYLE[job.state]}>{STATE_LABEL[job.state]}</Tag>
       </span>
       {job.message && !["queued", "running"].includes(job.state) && <span className="text-xs text-muted">{job.message}</span>}
       <span className="ml-auto text-xs text-muted">
@@ -158,14 +160,13 @@ export default function JobsPage() {
             扫描进度、处理结果，让后台的工作清晰可见。
           </p>
         </div>
-        <button
-          className="btn-outline"
+        <Button
           onClick={() => jobs.refetch()}
-          disabled={jobs.isFetching}
+          loading={jobs.isFetching}
+          icon={<IconRefresh />}
         >
-          <Icon name="refresh" size={16} />
           刷新
-        </button>
+        </Button>
       </div>
       <div className="jobs-stats" aria-label="最近 100 条任务统计">
         <div>
@@ -191,36 +192,32 @@ export default function JobsPage() {
           自动更新
         </span>
       </div>
-      <div className="tag-filters" aria-label="任务状态筛选">
-        {[
-          ["all", "全部"],
-          ["active", "进行中"],
-          ["done", "已完成"],
-          ["error", "失败"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            className={filter === value ? "selected" : ""}
-            aria-pressed={filter === value}
-            onClick={() => setFilter(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Radio.Group
+        type="button"
+        value={filter}
+        onChange={(value) => setFilter(value)}
+        aria-label="任务状态筛选"
+      >
+        <Radio value="all">全部</Radio>
+        <Radio value="active">进行中</Radio>
+        <Radio value="done">已完成</Radio>
+        <Radio value="error">失败</Radio>
+      </Radio.Group>
       {jobs.isLoading && (
         <div className="loading-panel" role="status">
-          正在读取任务记录…
+          <Spin dot tip="正在读取任务记录…" />
         </div>
       )}
       {jobs.isError && (
-        <div className="empty-state" role="alert">
-          <h3>暂时无法读取任务</h3>
-          <p>{(jobs.error as Error).message}</p>
-          <button className="btn-outline" onClick={() => jobs.refetch()}>
-            重新加载
-          </button>
-        </div>
+        <Alert
+          type="error"
+          content={(jobs.error as Error).message}
+          action={
+            <Button size="small" onClick={() => jobs.refetch()}>
+              重新加载
+            </Button>
+          }
+        />
       )}
 
       {validSelectedId && (
@@ -243,17 +240,19 @@ export default function JobsPage() {
             .map((j) => <JobRow key={j.id} job={j} />)}
       </div>
       {!jobs.isLoading && !jobs.isError && visible.length === 0 && (
-        <div className="empty-state">
-          <Icon name="check" size={32} />
-          <h3>
-            {filter === "active" ? "此刻，一切就绪。" : "这里还没有任务记录"}
-          </h3>
-          <p>
-            {filter === "active"
-              ? "没有等待处理的任务。可以回到影像库，挑选一段喜欢的视频。"
-              : "从存储源发起扫描后，任务进度会显示在这里。"}
-          </p>
-        </div>
+        <Empty
+          icon={<Icon name="check" size={32} />}
+          description={
+            <div>
+              <h3>{filter === "active" ? "此刻，一切就绪。" : "这里还没有任务记录"}</h3>
+              <p>
+                {filter === "active"
+                  ? "没有等待处理的任务。可以回到影像库，挑选一段喜欢的视频。"
+                  : "从存储源发起扫描后，任务进度会显示在这里。"}
+              </p>
+            </div>
+          }
+        />
       )}
     </div>
   );
