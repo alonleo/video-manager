@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Checkbox, Input, Pagination, Select } from "@arco-design/web-react";
 import { dubApi, type DubCue, type DubProject, type DubbingSettings, type Language, type Voice } from "../api/dubbing";
 import type { SubtitleTrack } from "../api/subtitles";
 import type { Job } from "../api/types";
@@ -104,21 +105,28 @@ export default function DubbingPage() {
     <section className="card dubbing-panel"><h2><span>01</span> 准备译配稿</h2>
       <p className="ai-hint">使用现有字幕或自动识别，翻译到目标语言。男女声按音高估计，可在下方逐句修正。</p>
       <div className="dubbing-fields">
-        <label>目标语言<select className="input" value={target} onChange={e => setTarget(e.target.value)}>{languages.data?.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>对白来源<select className="input" value={trackId} onChange={e => setTrackId(e.target.value)}><option value="">自动识别原视频对白</option>{tracks.data?.map(t => <option key={t.id} value={t.id}>{t.label} · {t.language}</option>)}</select></label>
-        <label>声线分配<select className="input" value={mode} onChange={e => setMode(e.target.value)}><option value="auto">自动估计男女声</option><option value="male">全部使用男声</option><option value="female">全部使用女声</option></select></label>
+        <label>目标语言<Select value={target} style={{ width: "100%" }} onChange={setTarget}
+          options={(languages.data ?? []).map(l => ({ label: l.name, value: l.id }))} /></label>
+        <label>对白来源<Select value={trackId} style={{ width: "100%" }} onChange={setTrackId}
+          options={[{ label: "自动识别原视频对白", value: "" },
+            ...(tracks.data ?? []).map(t => ({ label: t.label + " · " + t.language, value: String(t.id) }))]} /></label>
+        <label>声线分配<Select value={mode} style={{ width: "100%" }} onChange={setMode}
+          options={[{ label: "自动估计男女声", value: "auto" }, { label: "全部使用男声", value: "male" }, { label: "全部使用女声", value: "female" }]} /></label>
       </div>
-      <button className="btn-primary" disabled={!target || prepare.isPending || active.some(j => j.kind === "dub_prepare") || dirty || !config.data} onClick={() => prepare.mutate()}><Icon name="captions" size={17} />{prepare.isPending ? "提交中…" : "识别并准备译配稿"}</button>
+      <Button type="primary" loading={prepare.isPending} disabled={!target || active.some(j => j.kind === "dub_prepare") || dirty || !config.data} onClick={() => prepare.mutate()}><Icon name="captions" size={17} />识别并准备译配稿</Button>
       <p className="ai-hint">识别与翻译沿用 <Link className="text-link" to="/settings/ai">AI 模型与服务</Link>。后台处理，关闭页面后继续执行。</p>
     </section>
     {error && <p className="inline-alert" role="alert">{error}</p>}
 
     {!!projects.data?.length && <section className="card dubbing-panel"><h2><span>02</span> 检查译文与男女声</h2>
-      <label className="dubbing-project-picker">译配稿<select className="input" value={selected} disabled={dirty || save.isPending} onChange={e => setSelected(Number(e.target.value))}>{projects.data.map(p => <option key={p.id} value={p.id}>#{p.id} · {languages.data?.find(l => l.id === p.language)?.name ?? p.language} · {p.cue_count} 句</option>)}</select></label>
+      <label className="dubbing-project-picker">译配稿<Select value={selected} disabled={dirty || save.isPending} style={{ width: "100%" }}
+        onChange={value => setSelected(Number(value))}
+        options={projects.data.map(p => ({ label: "#" + p.id + " · " + (languages.data?.find(l => l.id === p.language)?.name ?? p.language) + " · " + p.cue_count + " 句", value: p.id }))} /></label>
       {project.isFetching && <p role="status">读取译配稿…</p>}
-      {project.isError && <p role="alert" className="inline-alert">{project.error.message}<button className="btn-ghost" onClick={() => project.refetch()}>重新载入</button></p>}
+      {project.isError && <p role="alert" className="inline-alert">{project.error.message}<Button size="small" onClick={() => project.refetch()}>重新载入</Button></p>}
       {draft && <><div className="dubbing-fields">{(["male", "female"] as const).map(gender => <label key={gender}>{gender === "male" ? "男声" : "女声"}音色
-        {config.data?.provider !== "api" ? <select className="input" value={gender === "male" ? male : female} onChange={e => gender === "male" ? setMale(e.target.value) : setFemale(e.target.value)}><option value="">使用配音设置中的默认音色</option>{voices.data?.filter(v => v.gender === gender).map(v => <option key={v.id} value={v.id}>{v.name || v.id}</option>)}</select> : <input className="input" value={gender === "male" ? male : female} placeholder="留空使用配音设置" onChange={e => gender === "male" ? setMale(e.target.value) : setFemale(e.target.value)} />}
+        {config.data?.provider !== "api" ? <Select style={{ width: "100%" }} value={gender === "male" ? male : female} onChange={value => gender === "male" ? setMale(value) : setFemale(value)}
+          options={[{ label: "使用配音设置中的默认音色", value: "" }, ...(voices.data ?? []).filter(v => v.gender === gender).map(v => ({ label: v.name || v.id, value: v.id }))]} /> : <Input value={gender === "male" ? male : female} allowClear placeholder="留空使用配音设置" onChange={value => gender === "male" ? setMale(value) : setFemale(value)} />}
       </label>)}</div>
       {voices.isError && <p className="inline-alert">{voices.error.message}</p>}
       <p className="ai-hint">「待确认」表示声线估计不确定；童声、音乐和多人重叠可能误判。试听为 AI 合成语音。{config.data?.provider === "local" ? "当前使用本地模型，译文与音色样本在服务器本机合成，CPU 处理需要等待。" : "在线模式会发送译文到所选语音服务，参考音色服务还会发送对应音频样本。"}句子过长时会自动加快语速，建议精简译文。</p>
@@ -127,16 +135,22 @@ export default function DubbingPage() {
         const index = (page - 1) * 12 + row;
         return <article key={index} className="dubbing-cue"><div className="dubbing-cue-meta"><strong>#{index + 1}</strong><span>{stamp(cue.start_ms)} – {stamp(cue.end_ms)}</span>{cue.uncertain && <span className="chip">待确认声线</span>}</div>
           <p className="dubbing-source">{cue.source_text}</p>
-          <label>配音译文<textarea className="input" rows={2} maxLength={4000} value={cue.text} disabled={save.isPending} onChange={e => edit(index, { text: e.target.value })} /></label>
-          <div className="dubbing-actions"><label>使用声线<select className="input" value={cue.gender} disabled={save.isPending} onChange={e => edit(index, { gender: e.target.value as "male" | "female", uncertain: false })}><option value="male">男声</option><option value="female">女声</option></select></label><button className="btn-outline" disabled={previewing !== null || !cue.text.trim()} onClick={() => preview(index)}><Icon name="volume" size={16} />{previewing === index ? "生成试听…" : "试听此句"}</button></div>
+          <label>配音译文<Input.TextArea rows={2} maxLength={4000} value={cue.text} disabled={save.isPending} onChange={value => edit(index, { text: value })} /></label>
+          <div className="dubbing-actions"><label>使用声线<Select value={cue.gender} disabled={save.isPending} style={{ width: "100%" }}
+            onChange={value => edit(index, { gender: value as "male" | "female", uncertain: false })}
+            options={[{ label: "男声", value: "male" }, { label: "女声", value: "female" }]} /></label>
+            <Button disabled={previewing !== null || !cue.text.trim()} loading={previewing === index} onClick={() => preview(index)}><Icon name="volume" size={16} />试听此句</Button></div>
         </article>;
       })}</div>
-      {projectPages > 1 && <div className="dubbing-actions"><button className="btn-outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>上一组</button><span>{page} / {projectPages}</span><button className="btn-outline" disabled={page === projectPages} onClick={() => setPage(p => p + 1)}>下一组</button></div>}
-      <div className="dubbing-actions"><button className="btn-outline" disabled={!dirty || save.isPending || draft.cues.some(c => !c.text.trim())} onClick={() => save.mutate()}>{save.isPending ? "保存中…" : "保存译文与声线"}</button>{dirty && <span role="status">有未保存修改，保存后再生成成片。</span>}</div>
-      <label className="dubbing-check"><input type="checkbox" checked={original} onChange={e => setOriginal(e.target.checked)} />附加原声音轨，保留原对白与音乐供切换</label>
+      {projectPages > 1 && <div className="dubbing-actions">
+        <Pagination total={projectPages * 12} pageSize={12} current={page} sizeCanChange={false} size="small" simple
+          onChange={p => setPage(p)} />
+      </div>}
+      <div className="dubbing-actions"><Button disabled={!dirty || save.isPending || draft.cues.some(c => !c.text.trim())} loading={save.isPending} onClick={() => save.mutate()}>保存译文与声线</Button>{dirty && <span role="status">有未保存修改，保存后再生成成片。</span>}</div>
+      <Checkbox checked={original} onChange={checked => setOriginal(checked)}>附加原声音轨，保留原对白与音乐供切换</Checkbox>
       <p className="ai-hint">仅生成配音并替换音轨，画面直接复制，不重新编码。根据原编码保存为 MP4 或 MKV，原片保留；配音轨只含生成对白。</p>
       {config.data?.provider === "local" && <p className="ai-hint">本地 CPU 首次生成语音仍需要时间。每句完成即缓存，取消或重试时保留；修改译文、音色或模型后只重新生成相应语句。</p>}
-      <button className="btn-primary" disabled={dirty || save.isPending || render.isPending || active.some(j => j.kind === "dub_render") || draft.cues.some(c => !c.text.trim())} onClick={() => render.mutate()}><Icon name="volume" size={17} />{render.isPending ? "提交中…" : "生成配音并替换音轨"}</button>
+      <Button type="primary" loading={render.isPending} disabled={dirty || save.isPending || active.some(j => j.kind === "dub_render") || draft.cues.some(c => !c.text.trim())} onClick={() => render.mutate()}><Icon name="volume" size={17} />生成配音并替换音轨</Button>
       </>}
     </section>}
     {!!results.length && <section className="card dubbing-panel"><h2><span>03</span> 已生成配音</h2><p className="ai-hint">生成的配音已加入当前视频。<Link className="text-link" to={"/videos/" + videoId} state={location.state}>返回播放器，在底部「配音」中选择音轨</Link>，即可替换原声播放。</p>{results.map(job => <details className="dubbing-result" key={job.id}><summary>#{job.id} · {String(job.result?.filename ?? "配音视频")} · AI 合成配音</summary>
