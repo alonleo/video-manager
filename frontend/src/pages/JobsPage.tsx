@@ -8,6 +8,7 @@ import ConversionActions from "../components/ConversionActions";
 import MoveJobActions from "../components/MoveJobActions";
 import DownloadActions from "../components/DownloadActions";
 import "../components/downloads.css";
+import TaskProgress from "../components/TaskProgress";
 import { cn } from "../lib/cn";
 import { formatRelative } from "../lib/format";
 import { JOB_KIND_LABEL as KIND_LABEL } from "../lib/jobNotifications";
@@ -60,6 +61,20 @@ function JobRow({ job }: { job: Job }) {
       <span className="ml-auto text-xs text-muted">
         {formatRelative(job.created_at)}
       </span>
+
+      {["queued", "running"].includes(job.state) && (
+        <div className="w-full">
+          {job.message && <p className="mb-1 text-xs text-muted">{job.message}</p>}
+          <TaskProgress
+            state={job.state}
+            progress={job.progress}
+            createdAt={job.created_at}
+            startedAt={job.started_at}
+            label={KIND_LABEL[job.kind] ?? job.kind}
+            compact
+          />
+        </div>
+      )}
 
       {result.length > 0 && (
         <div className="job-results w-full">
