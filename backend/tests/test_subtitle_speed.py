@@ -113,10 +113,16 @@ def test_long_video_loads_once_preserves_offsets_and_bounds(tmp_path, monkeypatc
     monkeypatch.setattr(speech, "emit", lambda *args: progress.append(args))
     monkeypatch.setattr(speech.subprocess, "run", lambda command, **kw: extractions.append(command))
 
-    def transcribe(received, audio, language, batch, callback):
+    def transcribe(received, audio, language, batch, callback, on_cues=None):
         assert received is engine and batch == 4
+        cues = [{"start_ms": 100, "end_ms": 2000, "text": "speech"}]
+        if on_cues:
+            on_cues(cues, "en")
+            if len(extractions) == 1:
+                snapshot = json.loads(output.read_text())
+                assert snapshot == {"cues": cues, "language": "en"}
         callback(2000, 2000, "done")
-        return {"cues": [{"start_ms": 100, "end_ms": 2000, "text": "speech"}], "language": "en"}
+        return {"cues": cues, "language": "en"}
 
     monkeypatch.setattr(speech, "transcribe_audio", transcribe)
     speech.transcribe_video(model, manifest, output)
@@ -157,3 +163,33 @@ async def test_cancel_stops_extraction_descendant(tmp_path):
     stopped = heartbeat.read_text()
     await asyncio.sleep(0.15)
     assert heartbeat.read_text() == stopped
+
+
+def test_whisper_final_snapshot_stays_readable_during_write(tmp_path, monkeypatch):
+    """Simulate the parent reading exactly when a direct overwrite truncates the file."""
+    from pathlib import Path
+    output = tmp_path / 'result.json'
+    manifest = tmp_path / 'input.json'
+    manifest.write_text(json.dumps({'path': 'video.mp4', 'duration_ms': 1000, 'language': 'auto', 'ffmpeg_bin': 'ffmpeg'}))
+    cues = [{'start_ms': 0, 'end_ms': 900, 'text': 'hello'}]
+    monkeypatch.setattr(speech, 'load_model', lambda _: object())
+    monkeypatch.setattr(speech.subprocess, 'run', lambda *args, **kwargs: None)
+    monkeypatch.setattr(speech, 'batch_size', lambda _: 1)
+    def transcribe(engine, audio, language, batch, report, on_cues):
+        on_cues(cues, 'en')
+        return {'cues': cues, 'language': 'en'}
+    monkeypatch.setattr(speech, 'transcribe_audio', transcribe)
+    write_text = Path.write_text
+    observed = []
+    def concurrent_write(path, text, *args, **kwargs):
+        if path == output:
+            with path.open('w'):
+                # A progress reader can run after truncation, before bytes are written.
+                json.loads(output.read_text())
+        if output.exists():
+            observed.append(json.loads(output.read_text()))
+        return write_text(path, text, *args, **kwargs)
+    monkeypatch.setattr(Path, 'write_text', concurrent_write)
+    speech.transcribe_video(tmp_path / 'small', manifest, output)
+    assert observed and observed[-1]['cues'] == cues
+    assert json.loads(output.read_text()) == {'cues': cues, 'language': 'en'}

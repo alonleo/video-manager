@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import wave
 from pathlib import Path
 
@@ -37,7 +38,7 @@ def batch_size(path):
     return 1 if size > 2_000_000_000 else 2 if size > 700_000_000 else 4
 
 
-def transcribe_audio(engine, audio, language, batch, progress=emit):
+def transcribe_audio(engine, audio, language, batch, progress=emit, on_cues=None):
     import numpy as np
 
     with wave.open(str(audio)) as wav:
@@ -61,8 +62,17 @@ def transcribe_audio(engine, audio, language, batch, progress=emit):
         end = max(0, min(duration_ms, round(segment.end * 1000)))
         if segment.text.strip() and end > start:
             cues.append({"start_ms": start, "end_ms": end, "text": segment.text.strip()})
+            if on_cues:
+                on_cues(cues, info.language)
         progress(end, duration_ms, "正在批量识别语音")
     return {"cues": cues, "language": info.language}
+
+
+def write_snapshot(output, result):
+    # Readers see either the previous complete JSON or the new complete JSON.
+    temporary = output.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result), encoding="utf-8")
+    temporary.replace(output)
 
 
 def transcribe_video(path, manifest, output):
@@ -73,6 +83,17 @@ def transcribe_video(path, manifest, output):
     batch = batch_size(path)
     audio = manifest.parent / "audio.wav"
     cues, detected = [], None
+    last_snapshot = 0
+    def snapshot(chunk_cues, chunk_language, offset):
+        nonlocal last_snapshot
+        now = time.monotonic()
+        if output.exists() and now - last_snapshot < 2:
+            return
+        current = cues + [{**cue, "start_ms": cue["start_ms"] + offset,
+                           "end_ms": min(duration_ms, cue["end_ms"] + offset)} for cue in chunk_cues]
+        current = [cue for cue in current if cue["end_ms"] > cue["start_ms"]]
+        write_snapshot(output, {"cues": current, "language": detected or chunk_language})
+        last_snapshot = now
     # Reuse the loaded model across bounded 10-minute audio chunks.
     for offset in range(0, duration_ms, 600000):
         emit(offset, duration_ms, "提取音轨")
@@ -110,7 +131,8 @@ def transcribe_video(path, manifest, output):
             fraction = min(done / total, 1) if total else 0
             emit(offset + fraction * min(600000, duration_ms - offset), duration_ms, message)
 
-        result = transcribe_audio(engine, audio, language, batch, chunk_progress)
+        result = transcribe_audio(engine, audio, language, batch, chunk_progress,
+                                  lambda current, lang: snapshot(current, lang, offset))
         if result["cues"]:
             detected = detected or result["language"]
         for cue in result["cues"]:
@@ -120,7 +142,7 @@ def transcribe_video(path, manifest, output):
                 cues.append(cue)
         if len(cues) > 30000:
             raise ValueError("字幕片段超过 30000 条，请分段处理视频")
-    output.write_text(json.dumps({"cues": cues, "language": detected}), encoding="utf-8")
+    write_snapshot(output, {"cues": cues, "language": detected})
 
 
 def main():

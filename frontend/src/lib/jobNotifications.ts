@@ -42,6 +42,11 @@ export function saveNotificationCursor(batch: NotificationBatch) {
 
 export const JOB_KIND_LABEL: Record<string, string> = {
   scan_library: "扫描媒体库",
+  dub_prepare: "准备译配稿",
+  dub_render: "生成配音视频",
+  dub_generate: "生成配音音轨",
+  dub_model_download: "下载本地语音模型",
+  dub_reference_transcribe: "提取参考音频原文",
   subtitle_generate: "生成字幕",
   subtitle_translate: "翻译字幕",
   subtitle_model_download: "下载 AI 模型",
@@ -55,6 +60,7 @@ export const JOB_KIND_LABEL: Record<string, string> = {
   transcode: "转码",
 };
 export function jobLabel(job: Job) {
+  if (job.kind === "subtitle_generate" && job.payload?.translation) return "生成并翻译字幕";
   return JOB_KIND_LABEL[job.kind] ?? "后台任务";
 }
 
@@ -84,10 +90,29 @@ export function jobResultText(job: Job): string {
       parts.push(`更新 ${result.updated} 项`);
     if (parts.length) return parts.join(" · ");
   }
-  if (job.kind === "subtitle_generate") return "字幕已生成，可在播放器中选择。";
+  if (job.kind === "dub_reference_transcribe") return result.applied === false ? "已保留手动校对的原文。" : (result.gender === "female" ? "女声" : "男声") + "「" + String(result.name ?? "参考音频") + "」原文已提取，可校对并设为默认音色。";
+  if (job.kind === "dub_prepare") return "译配稿已就绪，可检查译文与男女声分配。";
+  if (job.kind === "dub_generate") return "配音已生成，可在播放器底部「配音」中选择，与原声自由切换。";
+  if (job.kind === "dub_render") return "配音视频已生成，可试听或下载；原片已保留。";
+  if (job.kind === "subtitle_generate") return job.payload?.translation ? "原字幕与译文已生成，可在播放器中选择或双语显示。" : "字幕已生成，可在播放器中选择。";
   if (job.kind === "subtitle_translate")
     return "字幕翻译已完成，可在播放器中查看。";
+  if (job.kind === "dub_model_download")
+    return "本地语音模型已下载并检查完成" + (typeof result.size_bytes === "number" ? " · " + (result.size_bytes / 1024 ** 3).toFixed(2) + " GiB" : "") + "，可以开始配音。";
   if (job.kind === "subtitle_model_download")
     return "模型已下载，可以开始生成字幕。";
   return "任务已顺利完成。";
+}
+
+export function isActiveTask(job: Job) {
+  return job.state === "queued" || job.state === "running";
+}
+
+// Completed updates replace stale running snapshots of the same task.
+export function mergeTaskStack(updates: Job[], previous: Job[], dismissed: ReadonlySet<number>): Job[] {
+  const byId = new Map<number, Job>();
+  for (const job of [...updates, ...previous]) {
+    if (!dismissed.has(job.id) && !byId.has(job.id)) byId.set(job.id, job);
+  }
+  return [...byId.values()].sort((a, b) => b.id - a.id);
 }

@@ -41,6 +41,7 @@
 ## 实现
 
 - `frontend/src/components/player/WasmMedia.ts`：控制接口、异步操作串行化、合并拖动请求、生命周期及错误处理。
+- 播放器会在媒体信息加载后主动建立解码管线并渲染首帧，无需先拖动进度条；预加载窗口会按设备性能、网络类型和省流量设置自动选择 2、4 或 8 秒，并持续把解码队列进度反馈到缓冲条。
 - `VideoPlayer.tsx`、`PlayerControls.tsx`：自定义界面与独立引擎连接。
 - `WasmCaptions.tsx`：字幕文字解析和时间同步。
 - `GET /api/videos/{id}/playback-info?engine=wasm`：返回原文件路径，不进入准备缓存。

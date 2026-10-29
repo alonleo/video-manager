@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { subtitleApi, subtitleUrl, type SubtitleTrack } from "../../api/subtitles";
-import TaskProgress from "../TaskProgress";
 import Icon from "../Icon";
 import useSubtitleQuickActions from "./useSubtitleQuickActions";
 import CaptionStyleEditor from "./CaptionStyleEditor";
@@ -31,7 +30,7 @@ export function usePlayerCaptions(videoId: number) {
   const query = useQuery({
     queryKey: ["subtitles", videoId],
     queryFn: () => subtitleApi<SubtitleTrack[]>(`/videos/${videoId}/subtitles`),
-    staleTime: 0, refetchInterval: 5000,
+    staleTime: 0, refetchInterval: 2000,
   });
   const tracks = query.data || [];
   const track = tracks.find(t => selection.videoId === videoId && t.id === selection.id)
@@ -57,24 +56,23 @@ export default function PlayerCaptions({ captions }: { captions: PlayerCaptionsS
   return <div className="player-caption-options">
     <div className="player-menu-title"><strong>字幕</strong><span>{tracks.length} 个轨道</span></div>
     <div className="player-subtitle-actions">
+      <label className="player-auto-translate">
+        <input type="checkbox" checked={quick.autoTranslate} disabled={!quick.ready || quick.busy || quick.savingToggle}
+          onChange={event => quick.setAutoTranslate(event.target.checked)} />
+        <span>生成时自动翻译</span>
+      </label>
       <div className="player-subtitle-action-buttons">
-        <button type="button" disabled={!quick.ready || quick.busy} onClick={() => quick.start("generate")}>
-          <Icon name="plus" size={15} />生成字幕
+        <button type="button" disabled={!quick.ready || quick.busy || quick.savingToggle} onClick={() => quick.start("generate")}>
+          <Icon name="plus" size={15} />{quick.autoTranslate ? "生成并翻译" : "生成字幕"}
         </button>
-        <button type="button" disabled={!quick.ready || quick.busy || !track} onClick={() => quick.start("translate", track?.id)}>
+        <button type="button" disabled={!quick.ready || quick.busy || !track || track.building} onClick={() => quick.start("translate", track?.id)}>
           <Icon name="convert" size={15} />翻译字幕
         </button>
       </div>
       <p className="player-task-parameters">生成：{quick.asrModel || "读取设置…"} · {quick.saved?.language === "auto" ? "自动识别" : languageLabel(quick.saved?.language || "auto")}<br />
         翻译：{quick.translationModel || "读取设置…"} → {languageLabel(quick.saved?.target_language || "zh-CN")}</p>
       {!track && <p className="player-task-hint">先生成字幕，即可翻译成设置中的目标语言。</p>}
-      {job && <div className="player-subtitle-job" role="status">
-        <div><span>{job.kind === "subtitle_generate" ? "生成字幕" : "翻译字幕"} · {job.state === "queued" ? "排队中" : "处理中"}</span>
-          <button type="button" disabled={quick.cancel.isPending} onClick={() => quick.cancel.mutate(job.id)}>取消任务</button></div>
-        <TaskProgress state={job.state} progress={job.progress} createdAt={job.created_at}
-          startedAt={job.started_at} finishedAt={job.finished_at} label="字幕任务" compact />
-        {job.message && <p>{job.message}</p>}
-      </div>}
+
       {quick.busy && !job && <p className="player-task-hint" role="status">正在提交或读取字幕任务…</p>}
       {quick.message && !job && <p className="player-task-hint" role="status">{quick.message}</p>}
       {quick.error && <div className="player-task-error" role="alert">{quick.error}
@@ -92,7 +90,7 @@ export default function PlayerCaptions({ captions }: { captions: PlayerCaptionsS
       <div className="player-track-list" role="group" aria-label="字幕语言">
         {tracks.map(t => <button type="button" className="player-menu-option player-track-option" key={t.id}
           aria-pressed={track?.id === t.id} onClick={() => captions.select(t)}>
-          <span><strong>{languageLabel(t.language)}</strong><small>{t.label}</small></span>
+          <span><strong>{languageLabel(t.language)}</strong><small>{t.label}{t.building ? ` · 后台处理中 · 已有 ${t.cue_count} 条` : ""}</small></span>
           {track?.id === t.id && <Icon name="check" size={16} />}
         </button>)}
       </div>

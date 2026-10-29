@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.config import settings
 from app.models import Setting
 from app.services import subtitle_translation_local as local_translation
+from app.services import subtitle_translation_hy as hy_translation
 
 WHISPER_MODELS = {
     "tiny": ("Whisper Tiny", 80, "快速体验，识别精度较低"),
@@ -22,7 +23,24 @@ WHISPER_MODELS = {
     "large-v3": ("Whisper Large v3", 3100, "高准确率，需要更多内存"),
     "turbo": ("Whisper Turbo", 1650, "大模型精度与速度折中"),
 }
-OLLAMA_MODELS = ["qwen2.5:3b", "qwen2.5:7b", "gemma3:4b"]
+OLLAMA_MODELS = {
+    **hy_translation.MODELS,
+    "qwen2.5:7b": {"name": "Qwen2.5 7B · 均衡", "size_mb": 4700,
+        "description": "多语言字幕翻译升级入门，可优先尝试中英互译。",
+        "hardware_hint": "建议至少 8 GB 可用内存；CPU 可运行，GPU 更快。"},
+    "qwen2.5:14b": {"name": "Qwen2.5 14B · 推荐尝试", "size_mb": 9000,
+        "description": "更大容量的多语言模型，适合尝试改善口语、上下文和复杂句翻译。实际效果取决于语言与字幕内容。",
+        "hardware_hint": "建议至少 16 GB 可用内存；CPU 翻译较慢。"},
+    "qwen2.5:32b": {"name": "Qwen2.5 32B · 高容量", "size_mb": 20000,
+        "description": "适合资源充足时尝试复杂语义翻译；建议先用少量字幕与 14B 对比质量。",
+        "hardware_hint": "建议至少 32 GB 可用内存；优先使用 GPU。"},
+    "qwen2.5:3b": {"name": "Qwen2.5 3B · 轻量", "size_mb": 1900,
+        "description": "低资源多语言模型，速度优先，复杂语义建议尝试更大模型。",
+        "hardware_hint": "建议至少 4 GB 可用内存。"},
+    "gemma3:4b": {"name": "Gemma 3 4B · 多语言", "size_mb": 3300,
+        "description": "轻量多语言备选模型，需 Ollama 0.6 或更新版本。",
+        "hardware_hint": "建议至少 8 GB 可用内存。"},
+}
 
 
 class Provider(BaseModel):
@@ -206,7 +224,8 @@ async def catalog(config):
             for k, v in WHISPER_MODELS.items()
         ],
         "ollama": [
-            {"id": k, "installed": k in installed} for k in dict.fromkeys(OLLAMA_MODELS + installed)
+            {"id": k, "installed": k in installed, **OLLAMA_MODELS.get(k, {})}
+            for k in dict.fromkeys([*OLLAMA_MODELS, *installed])
         ],
         "ollama_error": ollama_error,
     }

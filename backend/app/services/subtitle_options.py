@@ -9,6 +9,7 @@ from app.services.subtitle_config import WHISPER_MODELS, SubtitleConfig
 
 
 class SubtitleTaskOptions(BaseModel):
+    auto_translate: bool = False
     asr_provider: Literal["local", "api"] | None = None
     asr_model: str = Field(default="", max_length=150)
     language: str = Field(default="auto", pattern=r"^(auto|[a-z]{2,3})$")

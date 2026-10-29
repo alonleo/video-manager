@@ -4,6 +4,7 @@ import Icon from "../Icon";
 import PlayerControls from "./PlayerControls";
 import { usePlayerCaptions } from "./PlayerCaptions";
 import WasmMedia from "./WasmMedia";
+import { usePlayerDubbing } from "./PlayerDubbing";
 import WasmCaptions from "./WasmCaptions";
 import { AutoBlackBarController } from "./blackBars";
 
@@ -33,6 +34,13 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
   const [attempt, setAttempt] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const captions = usePlayerCaptions(info.video_id);
+  const dubbing = usePlayerDubbing(info.video_id);
+  const playback = dubbing.track ? { ...info, mode: "wasm" as const,
+    stream_url: dubbing.track.stream_url, source_extension: dubbing.track.source_extension || "mp4",
+    container: dubbing.track.container || "mp4", video_codec: dubbing.track.video_codec || "h264",
+    audio_codec: dubbing.track.audio_codec || "aac" } : info;
+  const restore = useRef<{ videoId: number; position: number; playing: boolean; volume: number; muted: boolean; rate: number } | null>(null);
+  const releasing = useRef<Promise<unknown>>(Promise.resolve());
   const progressRef = useRef(onProgress);
   progressRef.current = onProgress;
   const startRef = useRef(info.start_position_ms);
@@ -53,7 +61,13 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
     const mount = document.createElement("div");
     mount.className = "wasm-engine-mount";
     surface.appendChild(mount);
+    const previous = restore.current?.videoId === info.video_id ? restore.current : null;
     const player = new WasmMedia(mount);
+    if (previous) {
+      player.volume = previous.volume;
+      player.muted = previous.muted;
+      player.playbackRate = previous.rate;
+    }
     mediaRef.current = player;
     setMedia(player);
     setReady(false); setStarted(false); setBuffering(true); setError(null);
@@ -70,7 +84,7 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
     const loaded = () => {
       if (!active) return;
       setReady(true); setBuffering(false);
-      if (autoplay && !autoplayAttempted) {
+      if ((previous ? previous.playing : autoplay) && !autoplayAttempted) {
         autoplayAttempted = true;
         void player.play().catch(() => {});
       }
@@ -91,21 +105,32 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
     listeners.forEach(([name, fn]) => player.addEventListener(name, fn));
     const hide = () => report(true);
     window.addEventListener("pagehide", hide);
-    if (info.stream_url && info.mode === "wasm")
-      void player.load(info.stream_url, info.source_extension || undefined, startRef.current, info.video_codec);
+    if (playback.stream_url && playback.mode === "wasm")
+      void releasing.current.then(() => {
+        if (active) return player.load(playback.stream_url!, playback.source_extension || undefined,
+          previous ? previous.position * 1000 : startRef.current, playback.video_codec);
+      });
     else {
       setError(info.mode === "wasm" ? info.reason : "播放服务需要更新，请刷新页面后重试。");
       setBuffering(false);
     }
     return () => {
       active = false;
+      if (player.readyState) restore.current = {
+        videoId: info.video_id, position: player.currentTime, playing: !player.paused && !player.ended,
+        volume: player.volume, muted: player.muted, rate: player.playbackRate,
+      };
       report(true);
       listeners.forEach(([name, fn]) => player.removeEventListener(name, fn));
       window.removeEventListener("pagehide", hide);
       if (mediaRef.current === player) mediaRef.current = null;
-      void player.destroy().finally(() => mount.remove());
+      // Silence immediately, then fully release the old audio renderer before
+      // loading another source. Rapid selections share the same cleanup barrier.
+      player.muted = true;
+      const stopped = player.destroy().finally(() => mount.remove());
+      releasing.current = Promise.allSettled([releasing.current, stopped]);
     };
-  }, [info.video_id, info.stream_url, info.mode, info.source_extension, attempt, autoplay]);
+  }, [info.video_id, playback.stream_url, playback.mode, playback.source_extension, attempt, autoplay]);
 
   const retry = () => {
     if (onNeedRefresh) onNeedRefresh();
@@ -115,7 +140,7 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
     <div ref={stageRef} tabIndex={0} role="region"
       aria-label="视频播放区域（空格播放，方向键快进，F 全屏）"
       className="player-stage relative aspect-video w-full overflow-hidden rounded-lg bg-black"
-      data-player-engine="wasm" data-controls-visible={controlsVisible} data-player-state={error ? "error" : buffering ? "loading" : ready ? "ready" : "idle"}>
+      data-player-engine="wasm" data-audio-track={dubbing.track?.id ?? "original"} data-controls-visible={controlsVisible} data-player-state={error ? "error" : buffering ? "loading" : ready ? "ready" : "idle"}>
       <div ref={surfaceRef} data-player-surface className="wasm-player-surface" />
       <WasmCaptions media={media} captions={captions} />
       {!error && buffering && <div className="wasm-player-overlay" role="status">
@@ -134,14 +159,14 @@ export default function VideoPlayer({ autoplay = false, autoCropBlackBars = fals
         <p>{error.slice(0, 240)}</p>
         <button type="button" className="wasm-retry" onClick={retry}>重新加载</button>
       </div>}
-      <PlayerControls videoRef={mediaRef} stageRef={stageRef} captions={captions}
+      <PlayerControls videoRef={mediaRef} media={media} stageRef={stageRef} captions={captions} dubbing={dubbing}
         unavailable={!ready || !!error} cinema={cinema} onCinema={onCinema}
         autoCropBlackBars={autoCropBlackBars} onAutoCropBlackBarsChange={onAutoCropBlackBarsChange}
         onVisibilityChange={setControlsVisible} />
     </div>
     <div className="wasm-player-status">
-      <span><i aria-hidden="true" />独立解码 · 原文件播放</span>
-      <span>{[info.container?.split(",")[0], info.video_codec, info.audio_codec].filter(Boolean).join(" / ").toUpperCase()}</span>
+      <span><i aria-hidden="true" />{dubbing.track ? dubbing.track.label + " · AI 配音" : "独立解码 · 原声播放"}</span>
+      <span>{[playback.container?.split(",")[0], playback.video_codec, playback.audio_codec].filter(Boolean).join(" / ").toUpperCase()}</span>
     </div>
   </div>;
 }

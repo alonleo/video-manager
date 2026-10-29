@@ -18,6 +18,7 @@ export type IconName =
   | "search"
   | "plus"
   | "arrow"
+  | "top"
   | "play"
   | "grid"
   | "list"
@@ -54,6 +55,7 @@ const paths: Record<IconName, string> = {
   search: "M20 20l-5-5 M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
   plus: "M12 5v14 M5 12h14",
   arrow: "M5 12h14 m-6-6 6 6-6 6",
+  top: "M5 4h14 M12 20V8 m-5 5 5-5 5 5",
   play: "m9 5 11 7-11 7Z",
   grid: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z",
   list: "M9 5h11 M9 12h11 M9 19h11 M4 5h.01 M4 12h.01 M4 19h.01",

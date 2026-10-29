@@ -1,17 +1,15 @@
 import type { SubtitleTaskStatus, VideoSubtitleStatus } from "../../api/subtitles";
 import { languageLabel } from "./PlayerCaptions";
-import TaskProgress from "../TaskProgress";
 import "./subtitle-status.css";
 
 function TaskBadge({ kind, task }: { kind: "generation" | "translation"; task: SubtitleTaskStatus }) {
   const generated = kind === "generation";
   const label = generated ? "生成字幕" : "翻译字幕";
-  const percent = Math.round(Math.min(1, Math.max(0, task.progress || 0)) * 100);
   const text = {
     idle: generated ? "未生成" : "未翻译",
     imported: "已导入",
     queued: "排队中",
-    running: (generated ? "生成中 " : "翻译中 ") + percent + "%",
+    running: generated ? "生成中" : "翻译中",
     done: generated ? "已生成" : "已翻译",
     error: "失败",
     canceled: "已取消",
@@ -24,9 +22,7 @@ function TaskBadge({ kind, task }: { kind: "generation" | "translation"; task: S
       <span className="subtitle-status-pill" data-state={task.state}>{text}</span>
       {task.active_count > 1 && <span className="subtitle-status-extra">共 {task.active_count} 项处理中</span>}
     </span>
-    {task.job_id && <TaskProgress state={task.state} progress={task.progress}
-      createdAt={task.created_at} startedAt={task.started_at} finishedAt={task.finished_at}
-      label={label} compact />}
+
     {task.target_language && ["queued", "running"].includes(task.state) &&
       <span className="subtitle-status-note">目标：{languageLabel(task.target_language)}</span>}
     {details && <span className="subtitle-status-note" title={details}>{details}</span>}

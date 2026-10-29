@@ -18,6 +18,7 @@ from app.api import (
     categories,
     device_auth,
     downloads,
+    dubbing,
     enhancement,
     jobs,
     misc,
@@ -89,6 +90,7 @@ app.include_router(enhancement.router)
 app.include_router(misc.router)
 app.include_router(subtitles.router)
 app.include_router(downloads.router)
+app.include_router(dubbing.router)
 
 
 # ---------------------------------------------------------------- 前端静态托管

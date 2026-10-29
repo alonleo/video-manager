@@ -488,3 +488,16 @@ class SubtitleTrack(Base):
     cues: Mapped[list] = mapped_column(JSON)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+
+
+class DubbingProject(Base):
+    __tablename__ = "dubbing_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("video_sources.id", ondelete="SET NULL"))
+    source_fingerprint: Mapped[list] = mapped_column(JSON)
+    language: Mapped[str] = mapped_column(Text)
+    cues: Mapped[list] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())

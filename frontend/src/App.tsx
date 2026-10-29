@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getHealth } from "./api/client";
 import Icon from "./components/Icon";
 import TaskNotifications from "./components/TaskNotifications";
+import BackToTop from "./components/BackToTop";
 import type { IconName } from "./components/Icon";
 import { cn } from "./lib/cn";
 import { shouldResetRouteScroll } from "./lib/routeScroll";
@@ -261,6 +262,7 @@ export default function App() {
           <span>YOUR STORIES. YOUR SPACE.</span>
         </footer>
       </div>
+      <BackToTop />
       <TaskNotifications />
     </div>
   );

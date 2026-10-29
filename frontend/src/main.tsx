@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import App from "./App";
 import LibraryPage from "./pages/LibraryPage";
 import PlayerPage from "./pages/PlayerPage";
+import DubbingPage from "./pages/DubbingPage";
 import PhotoPage from "./pages/PhotoPage";
 import "./photos.css";
 import StoragesPage from "./pages/StoragesPage";
@@ -39,6 +40,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="photos" element={<LibraryPage key="photos" mediaType="photo" />} />
             <Route path="photos/:id" element={<PhotoPage />} />
             <Route path="videos/:id" element={<PlayerPage />} />
+            <Route path="videos/:id/dubbing" element={<DubbingPage />} />
             <Route path="storages" element={<StoragesPage />} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="downloads" element={<DownloadsPage />} />
@@ -46,6 +48,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/playback" element={<SettingsPage />} />
             <Route path="settings/ai" element={<SettingsPage />} />
+            <Route path="settings/dubbing" element={<SettingsPage />} />
             <Route path="settings/devices" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

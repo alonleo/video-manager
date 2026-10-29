@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cancelJob } from "../api/client";
 import { enhancementFile, importEnhancement } from "../api/enhancement";
 import type { Job } from "../api/types";
-import TaskProgress from "./TaskProgress";
 import { formatSize } from "../lib/format";
 import Icon from "./Icon";
 import "./EnhanceVideo.css";
@@ -96,7 +95,6 @@ export function EnhancementComparison({ job }: { job: Job }) {
 export default function EnhancementResult({
   job,
   comparison = false,
-  showProgress = true,
 }: {
   job: Job;
   comparison?: boolean;
@@ -124,8 +122,7 @@ export default function EnhancementResult({
     imported.data?.video_id ?? Number(result?.imported_video_id || 0);
   return (
     <div className="enhancement-result">
-      {showProgress && <TaskProgress state={job.state} progress={job.progress} createdAt={job.created_at}
-        startedAt={job.started_at} finishedAt={job.finished_at} label={`增强任务 ${job.id}`} />}
+
       {["queued", "running"].includes(job.state) && (
         <>
           <button

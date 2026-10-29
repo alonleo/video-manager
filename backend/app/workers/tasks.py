@@ -67,7 +67,8 @@ async def run_job(ctx: dict, job_db_id: int, kind: str, payload: dict) -> dict:
 
             result = await download(payload, job_db_id, progress)
         else:
-            result = await _dispatch(kind, payload, progress)
+            dispatch_payload = {**payload, "_job_id": job_db_id} if kind in {"subtitle_generate", "subtitle_translate"} else payload
+            result = await _dispatch(kind, dispatch_payload, progress)
     except (JobCanceled, asyncio.CancelledError):
         async with SessionLocal() as s:
             await _mark(s, job_db_id, state=JobState.canceled, finished_at=datetime.now(UTC))
@@ -97,6 +98,21 @@ async def run_job(ctx: dict, job_db_id: int, kind: str, payload: dict) -> dict:
 
 
 async def _dispatch(kind: str, payload: dict, progress) -> dict:
+    if kind == "dub_reference_transcribe":
+        from app.services.dubbing_reference_asr import dispatch
+
+        return await dispatch(payload, progress)
+
+    if kind == "dub_model_download":
+        from app.services.dubbing_local import download
+
+        return await download(payload, progress)
+
+    if kind in {"dub_prepare", "dub_render", "dub_generate"}:
+        from app.services.dubbing import dispatch
+
+        return await dispatch(kind, payload, progress)
+
     if kind in {"subtitle_generate", "subtitle_translate", "subtitle_model_download"}:
         from app.services.subtitles import dispatch
 

@@ -163,6 +163,7 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
       !overview.isLoading &&
       !tags.isLoading &&
       !storages.isLoading,
+    page,
   );
   const total = videos.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

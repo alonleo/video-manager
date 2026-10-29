@@ -351,3 +351,30 @@
   color: #8d351f;
   background: #f2e2d8;
 }
+
+.ai-model-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 12px; }
+.ai-model-filters button { min-height: 40px; padding: 8px 18px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 13px; transition: background .15s, color .15s; }
+.ai-model-filters button[aria-pressed="true"] { color: var(--paper, #fffdf8); background: var(--ink, #24372f); border-color: var(--ink, #24372f); }
+.ai-model-filters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ai-model-category { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); }
+.ai-model-category-heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 16px; }
+.ai-model-category-heading h3, .ai-library-downloads > h3 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.ai-model-category-heading p { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.ai-model-category-heading > .tiny-label { white-space: nowrap; font-size: 10px; color: var(--muted); }
+.ai-model-card { min-width: 0; }
+.ai-model-card h4 { font-size: 18px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.ai-model-card > .task-progress { width: 100%; }
+.ai-model-actions { margin-top: auto; }
+.ai-model-actions button { white-space: normal; }
+.ai-speech-model-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ai-library-downloads { margin-top: 30px; }
+.ai-library-downloads > h3 { margin-bottom: 16px; }
+@media (max-width: 700px) {
+  .ai-speech-model-grid { grid-template-columns: minmax(0, 1fr); }
+  .ai-model-category-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .ai-model-filters button { padding: 8px 14px; }
+  .ai-ollama-download > div { min-width: 0; }
+}
+
+.player-auto-translate { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-size: 12px; margin: 8px 0; cursor: pointer; }
+.player-auto-translate input { width: 16px; height: 16px; flex: 0 0 16px; accent-color: #647a50; }

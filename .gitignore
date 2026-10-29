@@ -10,6 +10,7 @@
 /data/thumbs/*
 /data/photos/
 /data/models/
+/data/dubbing/
 /data/*.lock
 /data/*.db*
 !/data/covers/.gitkeep
@@ -48,3 +49,6 @@ frontend/dist/
 /android/signing/
 /android/.signing.new.*/
 /artifacts/
+
+# Isolated CPU speech model runtime
+.tts-venv/

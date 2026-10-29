@@ -6,7 +6,6 @@ import { convertVideo, inspectTsRepair, listVideoConversions, renameVideo, repai
 import type { ConversionOptions } from "../api/client";
 import type { Job, VideoDetail } from "../api/types";
 import ConversionActions from "./ConversionActions";
-import TaskProgress from "./TaskProgress";
 import ConversionSettings from "./ConversionSettings";
 import { DirectoryDialog } from "./DirectoryTools";
 
@@ -236,9 +235,8 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
                 <strong>{job.result?.ts_repair || job.payload?._ts_repair ? "TS 时长修复" : "格式转换"} #{job.id}</strong>
                 <span>{STATES[job.state]}</span>
               </div>
-              <TaskProgress state={job.state} progress={job.progress} createdAt={job.created_at}
-                startedAt={job.started_at} finishedAt={job.finished_at} label={`转换任务 ${job.id}`} compact />
-              {job.message && <p className="text-xs text-muted">{job.message}</p>}
+
+              {job.message && !["queued", "running"].includes(job.state) && <p className="text-xs text-muted">{job.message}</p>}
               {job.error && <p className="inline-alert" role="alert">{job.error}</p>}
               <ConversionActions job={job} />
             </article>

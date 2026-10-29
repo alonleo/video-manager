@@ -129,7 +129,7 @@ def token_chunks(tokens, limit=400):
         yield tokens
 
 
-def translate_texts(root, texts, source, target, progress=emit, *, cache_path=None):
+def translate_texts(root, texts, source, target, progress=emit, *, cache_path=None, checkpoint=None):
     from collections import Counter
 
     from app.services.subtitle_translation_memory import TranslationMemory
@@ -167,6 +167,11 @@ def translate_texts(root, texts, source, target, progress=emit, *, cache_path=No
             else:
                 translated[text] = cached
         completed = sum(counts[text] for text in translated)
+        def publish():
+            if checkpoint:
+                indices = [i for i, text in enumerate(texts) if text in translated]
+                checkpoint(indices, [translated[texts[i]] for i in indices])
+        publish()
         if not pending:
             progress(completed, len(texts), "已复用本地翻译结果")
             return [translated[text] for text in texts]
@@ -211,6 +216,7 @@ def translate_texts(root, texts, source, target, progress=emit, *, cache_path=No
                 pairs.append((original, text))
                 completed += counts[original]
             memory.put_many(pairs)
+            publish()
             progress(completed, len(texts), f"本地翻译 {completed}/{len(texts)} 条字幕")
         return [translated[text] for text in texts]
     finally:
@@ -225,12 +231,18 @@ def main():
     elif action == "translate":
         input_path, output_path = map(Path, args)
         data = json.loads(input_path.read_text())
+        def checkpoint(indices, texts):
+            path = output_path.with_suffix(".partial.json")
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"indices": indices, "texts": texts}), encoding="utf-8")
+            temporary.replace(path)
         result = translate_texts(
             root,
             data["texts"],
             data["source"],
             data["target"],
             cache_path=os.environ.get("SUBTITLE_TRANSLATION_CACHE"),
+            checkpoint=checkpoint,
         )
         output_path.write_text(json.dumps(result, ensure_ascii=False))
     else:

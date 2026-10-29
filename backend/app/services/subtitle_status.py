@@ -6,7 +6,7 @@ import math
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Job, JobState, SubtitleTrack, Video
@@ -94,43 +94,59 @@ async def read_subtitle_status(
         if item.translated_count:
             item.translation.state = "done"
 
+    # A pipeline job represents both recognition and translation without loading cue text.
+    columns = [Job.video_id, Job.id, Job.state, Job.progress, Job.message, Job.error,
+               Job.created_at, Job.started_at, Job.finished_at]
+    source_partial = Job.result["source_partial"].as_boolean().label("source_partial")
+    regular = select(*columns, Job.kind,
+        func.coalesce(Job.result["source_track_id"].as_integer(), Job.result["track_id"].as_integer()).label("track_id"),
+        Job.payload["target_language"].as_string().label("target_language"), source_partial).where(
+        Job.video_id.in_(existing), Job.kind.in_(["subtitle_generate", "subtitle_translate"]))
+    pipeline = select(*columns, literal("subtitle_translate").label("kind"),
+        case((Job.result["track_id"].as_integer() != Job.result["source_track_id"].as_integer(),
+              Job.result["track_id"].as_integer()), else_=None).label("track_id"),
+        Job.payload["translation"]["target_language"].as_string().label("target_language"), source_partial).where(
+        Job.video_id.in_(existing), Job.kind == "subtitle_generate",
+        Job.payload["translation"]["provider"].as_string().is_not(None))
+    status_jobs = union_all(regular, pipeline).subquery()
     # Select one representative per video/kind: running > queued > latest terminal job.
     # Windowing prevents a global "latest 50 jobs" cap from hiding older active tasks.
-    active = Job.state.in_([JobState.queued, JobState.running])
-    partition = [Job.video_id, Job.kind]
+    active = status_jobs.c.state.in_([JobState.queued, JobState.running])
+    partition = [status_jobs.c.video_id, status_jobs.c.kind]
     ranked = (
         select(
-            Job.video_id,
-            Job.kind,
-            Job.id,
-            Job.state,
-            Job.progress,
-            Job.message,
-            Job.error,
-            Job.created_at,
-            Job.started_at,
-            Job.finished_at,
-            Job.result["track_id"].as_integer().label("track_id"),
-            Job.payload["target_language"].as_string().label("target_language"),
+            status_jobs.c.video_id,
+            status_jobs.c.kind,
+            status_jobs.c.id,
+            status_jobs.c.state,
+            status_jobs.c.progress,
+            status_jobs.c.message,
+            status_jobs.c.error,
+            status_jobs.c.created_at,
+            status_jobs.c.started_at,
+            status_jobs.c.finished_at,
+            status_jobs.c.track_id,
+            status_jobs.c.source_partial,
+            status_jobs.c.target_language,
             func.sum(case((active, 1), else_=0)).over(partition_by=partition).label("active_count"),
             func.row_number()
             .over(
                 partition_by=partition,
                 order_by=[
                     case(
-                        (Job.state == JobState.running, 0),
-                        (Job.state == JobState.queued, 1),
+                        (status_jobs.c.state == JobState.running, 0),
+                        (status_jobs.c.state == JobState.queued, 1),
                         else_=2,
                     ),
-                    Job.created_at.desc(),
-                    Job.id.desc(),
+                    status_jobs.c.created_at.desc(),
+                    status_jobs.c.id.desc(),
                 ],
             )
             .label("rank"),
         )
         .where(
-            Job.video_id.in_(existing),
-            Job.kind.in_(["subtitle_generate", "subtitle_translate"]),
+            status_jobs.c.video_id.in_(existing),
+            status_jobs.c.kind.in_(["subtitle_generate", "subtitle_translate"]),
         )
         .subquery()
     )
@@ -140,6 +156,8 @@ async def read_subtitle_status(
         kind = "generation" if row["kind"] == "subtitle_generate" else "translation"
         status = getattr(item, kind)
         state = row["state"].value
+        if kind == "generation" and row["source_partial"] is False:
+            state = "done"
         if state == "done" and row["track_id"] not in track_ids.get((item.video_id, kind), set()):
             # Older retained tracks remain visible via counts, but this result is gone.
             state = "missing"

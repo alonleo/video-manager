@@ -5,7 +5,6 @@ import { listCategories } from "../api/client";
 import { downloadStatus, listDownloads, startDownload } from "../api/downloads";
 import Icon from "../components/Icon";
 import DownloadActions from "../components/DownloadActions";
-import TaskProgress from "../components/TaskProgress";
 import { formatRelative } from "../lib/format";
 import "../components/downloads.css";
 
@@ -111,9 +110,8 @@ export default function DownloadsPage() {
           <span className="download-hint">#{job.id} · {formatRelative(job.created_at)}</span></div>
         <h3>{typeof job.result?.title === "string" ? job.result.title : "视频链接下载"}</h3>
         <p className="download-source">{String(job.payload?.url ?? "")}</p>
-        <TaskProgress state={job.state} progress={job.progress} createdAt={job.created_at}
-          startedAt={job.started_at} finishedAt={job.finished_at} label={`下载任务 ${job.id}`} />
-        <div className="download-job-bottom"><p className="download-hint">{job.state === "error" ? "下载未完成，可调整设置后重试" : job.message || "等待处理"}
+
+        <div className="download-job-bottom"><p className="download-hint">{job.state === "error" ? "下载未完成，可调整设置后重试" : ["queued", "running"].includes(job.state) ? "后台任务进度见右下角" : job.message || ""}
           </p><DownloadActions job={job} /></div>
         {job.error && <p className="download-error">{job.error}</p>}
       </article>;

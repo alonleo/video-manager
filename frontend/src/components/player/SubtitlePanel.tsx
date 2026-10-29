@@ -12,7 +12,6 @@ import {
   defaultSubtitleOptions,
 } from "../../api/subtitles";
 import type { Job } from "../../api/types";
-import TaskProgress from "../TaskProgress";
 import Icon from "../Icon";
 
 const languages = [
@@ -35,6 +34,7 @@ export default function SubtitlePanel({
   const [selected, setSelected] = useState<number | null>(null);
   const [mode, setMode] = useState("single");
   const [target, setTarget] = useState("zh-CN");
+  const [autoTranslate, setAutoTranslate] = useState(false);
   const [sourceLang, setSourceLang] = useState("auto");
   const [asrModel, setAsrModel] = useState("");
   const [translationModel, setTranslationModel] = useState("");
@@ -54,6 +54,7 @@ export default function SubtitlePanel({
   const tracks = useQuery({
     queryKey: ["subtitles", videoId],
     queryFn: () => subtitleApi<SubtitleTrack[]>(`/videos/${videoId}/subtitles`),
+    refetchInterval: 2000,
   });
   const config = useQuery({
     queryKey: ["subtitle-settings"],
@@ -71,6 +72,7 @@ export default function SubtitlePanel({
       setSourceLang(saved.language);
       setTranslationSource(saved.source_language);
       setTarget(saved.target_language);
+      setAutoTranslate(saved.auto_translate ?? false);
       setOptionsLoaded(true);
     }
   }, [taskOptions.data, config.data, optionsLoaded]);
@@ -100,7 +102,11 @@ export default function SubtitlePanel({
           ? settings.ollama_model
           : settings?.translation_api.model) ||
         "";
+  useEffect(() => {
+    if (taskOptions.data) setAutoTranslate(taskOptions.data.auto_translate ?? false);
+  }, [taskOptions.data?.auto_translate]);
   const currentOptions: SubtitleTaskOptions = {
+    auto_translate: autoTranslate,
     asr_provider: asrModel.trim() ? settings?.asr_provider ?? null : null,
     asr_model: asrModel.trim(), language: sourceLang,
     translation_provider: translationModel.trim() && settings?.translation_provider !== "local" ? settings?.translation_provider ?? null : null,
@@ -123,7 +129,7 @@ export default function SubtitlePanel({
     j.kind.startsWith("subtitle_"),
   );
   const pending = recent.some((j) => ["queued", "running"].includes(j.state));
-  const jobSignature = recent.map((j) => `${j.id}:${j.state}`).join(",");
+  const jobSignature = recent.map((j) => `${j.id}:${j.state}:${j.result?.track_id || ""}`).join(",");
   useEffect(() => {
     if (tracks.data && selected === null)
       setSelected(tracks.data[0]?.id ?? null);
@@ -132,7 +138,9 @@ export default function SubtitlePanel({
     qc.invalidateQueries({ queryKey: ["subtitles", videoId] });
     qc.invalidateQueries({ queryKey: ["subtitle-status"] });
     const job = recent.find((j) => j.id === activeJob);
-    if (job?.state === "done" && typeof job.result?.track_id === "number") {
+    if (job && ["running", "done"].includes(job.state) && typeof job.result?.track_id === "number") {
+      setSelected(job.result.track_id);
+      if (job.state !== "done") return;
       setSelected(job.result.track_id);
       setMode("single");
       setActiveJob(null);
@@ -289,6 +297,7 @@ export default function SubtitlePanel({
           </select>
         </label>
       </div>
+      {track?.partial && <p className="ai-hint" role="status">已显示 {track.cue_count} 条完成片段。{track.building ? "后台仍在继续处理，字幕会自动更新；可返回播放器观看。" : "任务已停止，已完成的部分字幕仍可使用。"}</p>}
       <div className="subtitle-toolbar">
         <input
           ref={file}
@@ -310,7 +319,7 @@ export default function SubtitlePanel({
         </button>
         {track && (
           <>
-            <button className="btn-ghost" onClick={loadEditor}>
+            <button className="btn-ghost" disabled={track.building} onClick={loadEditor}>
               校对字幕
             </button>
             <a
@@ -327,6 +336,7 @@ export default function SubtitlePanel({
             </a>
             <button
               className="btn-ghost text-red-700"
+              disabled={track.building}
               onClick={() => setDeleteConfirm(!deleteConfirm)}
             >
               删除
@@ -403,6 +413,12 @@ export default function SubtitlePanel({
               ? "通过已配置语音 API 处理，将上传音频片段。"
               : "本机 Whisper 处理。缺少模型时请先到 AI 设置下载。"}
           </p>
+          <label className="player-auto-translate">
+            <input type="checkbox" checked={autoTranslate} disabled={!optionsLoaded || pending || perform.isPending || saveOptions.isPending}
+              onChange={event => setAutoTranslate(event.target.checked)} />
+            <span>生成时自动翻译</span>
+          </label>
+          <p className="ai-hint">开启后使用下方翻译模型与目标语言，原文和译文逐步显示。</p>
           <button
             className="btn-primary"
             disabled={
@@ -415,11 +431,12 @@ export default function SubtitlePanel({
                   provider: settings!.asr_provider,
                   model: effectiveASR,
                   language: sourceLang,
+                  auto_translate: autoTranslate,
                 },
               })
             }
           >
-            生成字幕
+            {autoTranslate ? "生成并翻译" : "生成字幕"}
           </button>
         </div>
         <div>
@@ -535,39 +552,7 @@ export default function SubtitlePanel({
           {message}
         </p>
       )}
-      {recent.slice(0, 3).map((job) => (
-        <div className="subtitle-job" key={job.id}>
-          <div>
-            <span>
-              #{job.id} ·{" "}
-              {job.kind === "subtitle_generate" ? "生成字幕" : "翻译字幕"} ·{" "}
-              {
-                {
-                  queued: "排队中",
-                  running: "处理中",
-                  done: "已完成",
-                  error: "失败",
-                  canceled: "已取消",
-                }[job.state]
-              }
-            </span>
-            {["queued", "running"].includes(job.state) && (
-              <button
-                className="btn-ghost"
-                disabled={perform.isPending}
-                onClick={() =>
-                  perform.mutate({ path: `/jobs/${job.id}/cancel` })
-                }
-              >
-                取消
-              </button>
-            )}
-          </div>
-          <TaskProgress state={job.state} progress={job.progress} createdAt={job.created_at}
-            startedAt={job.started_at} finishedAt={job.finished_at} label={`字幕任务 ${job.id}`} compact />
-          <p className="ai-hint">{job.error || job.message}</p>
-        </div>
-      ))}
+
       {editor && (
         <div className="subtitle-editor">
           <div className="subtitle-panel-heading">

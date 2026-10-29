@@ -16,6 +16,8 @@ export interface SubtitleTrack {
   bilingual: boolean;
   cue_count: number;
   version: number;
+  partial?: boolean;
+  building?: boolean;
   cues?: Cue[];
 }
 export interface Provider {
@@ -54,7 +56,7 @@ export interface ModelCatalog {
     description: string;
     installed: boolean;
   }[];
-  ollama: { id: string; installed: boolean }[];
+  ollama: { id: string; installed: boolean; name?: string; size_mb?: number; description?: string; hardware_hint?: string; source_url?: string }[];
   ollama_error: string | null;
 }
 export async function subtitleApi<T>(
@@ -90,6 +92,7 @@ export const subtitleUrl = (
 
 /** Saved per-video overrides; an empty model follows the global AI setting. */
 export interface SubtitleTaskOptions {
+  auto_translate: boolean;
   asr_provider: "local" | "api" | null;
   asr_model: string;
   language: string;
@@ -99,7 +102,7 @@ export interface SubtitleTaskOptions {
   target_language: string;
 }
 export const defaultSubtitleOptions: SubtitleTaskOptions = {
-  asr_provider: null, asr_model: "", language: "auto",
+  auto_translate: false, asr_provider: null, asr_model: "", language: "auto",
   translation_provider: null, translation_model: "",
   source_language: "auto", target_language: "zh-CN",
 };

@@ -453,7 +453,7 @@ export default function EnhanceVideoActions({
                 {submit.error.message}
               </p>
             )}
-            {preview && (
+            {preview && !["queued", "running"].includes(preview.state) && (
               <section
                 className="enhancement-preview-status"
                 aria-label="增强预览"
@@ -462,9 +462,6 @@ export default function EnhanceVideoActions({
                   <strong>预览 #{preview.id}</strong>
                   <span>
                     {states[preview.state]}
-                    {preview.state === "running"
-                      ? ` · ${Math.round(preview.progress * 100)}%`
-                      : ""}
                   </span>
                 </div>
                 {preview.message && (
@@ -552,7 +549,7 @@ export default function EnhanceVideoActions({
                 </strong>
                 <span>{states[job.state]}</span>
               </div>
-              {job.message && <p className="directory-help">{job.message}</p>}
+              {job.message && !["queued", "running"].includes(job.state) && <p className="directory-help">{job.message}</p>}
               {job.error && (
                 <p className="inline-alert" role="alert">
                   {job.error}

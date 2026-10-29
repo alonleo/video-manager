@@ -144,3 +144,14 @@
 .player-settings-sheet .player-control-menu { position: static; width: 100%; max-width: none; max-height: none; min-height: 0; margin: 0; padding: 12px; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
 .player-settings-sheet :is(button, a, input, select):focus-visible { outline: 2px solid #f7cfab; outline-offset: -2px; }
 .player-settings-sheet .player-speed-options button { min-height: 44px; }
+
+/* Keep the full audio/caption controls reachable on narrow portrait screens. */
+@media (max-width: 480px) {
+  .player-control-row { flex-wrap: wrap; }
+  .player-time { flex: 1 0 calc(100% - 40px); }
+  .player-control-spacer { display: none; }
+  .player-control-row > .player-control-button { flex: 1 0 30px; min-height: 36px; }
+  .player-control-row > .player-control-button:first-child { flex: 0 0 30px; }
+  .wasm-player-overlay { padding-bottom: 100px; }
+  .wasm-player-start { padding-bottom: 80px; }
+}

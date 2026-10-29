@@ -3,13 +3,14 @@ import { useLocation } from "react-router-dom";
 import { getLibraryPosition, rememberLibraryPosition } from "./libraryPosition";
 
 /** Restore after data and layout are ready; never fight a user's scroll gesture. */
-export function useLibraryPosition(ready: boolean) {
+export function useLibraryPosition(ready: boolean, page: number) {
   const location = useLocation();
   const root = useRef<HTMLDivElement>(null);
   const readyRef = useRef(ready);
   readyRef.current = ready;
   const reconcile = useRef<(() => void) | null>(null);
   const mounted = useRef(false);
+  const previousPage = useRef(page);
 
   useLayoutEffect(() => {
     const element = root.current;
@@ -111,11 +112,22 @@ export function useLibraryPosition(ready: boolean) {
       deadline = window.setTimeout(finish, 15000);
       restore();
     } else {
-      if (!mounted.current && !focusSearch && !location.hash)
-        window.scrollTo({ top: 0, behavior: "instant" });
+      // Pagination starts at the collection heading, below the page intro.
+      // Saved history/detail returns above still restore the previous card.
+      if (!focusSearch && !location.hash) {
+        if (mounted.current && previousPage.current !== page) {
+          element.querySelector("#collection")?.scrollIntoView({
+            block: "start",
+            behavior: "instant",
+          });
+        } else if (!mounted.current) {
+          window.scrollTo({ top: 0, behavior: "instant" });
+        }
+      }
       capture();
     }
     mounted.current = true;
+    previousPage.current = page;
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("pagehide", capture);
     window.addEventListener("popstate", capture);
@@ -142,7 +154,7 @@ export function useLibraryPosition(ready: boolean) {
       window.removeEventListener("keydown", onKey);
       element.removeEventListener("click", capture, true);
     };
-  }, [location.key, location.search, location.hash, location.state]);
+  }, [location.key, location.search, location.hash, location.state, page]);
 
   useLayoutEffect(() => {
     reconcile.current?.();

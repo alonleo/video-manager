@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  subtitleApi, type SubtitleSettings, type SubtitleTaskOptions, type SubtitleTrack,
+  subtitleApi, defaultSubtitleOptions, type SubtitleSettings, type SubtitleTaskOptions, type SubtitleTrack,
 } from "../../api/subtitles";
 import type { Job } from "../../api/types";
 
@@ -15,6 +15,14 @@ export default function useSubtitleQuickActions(videoId: number, onReady: (track
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const submitting = useRef(false);
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => subtitleApi<SubtitleTaskOptions>(`/videos/${videoId}/subtitle-options`, "PUT", {
+      ...defaultSubtitleOptions, ...qc.getQueryData<SubtitleTaskOptions>(["subtitle-options", videoId]), auto_translate: enabled,
+    }),
+    onSuccess: data => { qc.setQueryData(["subtitle-options", videoId], data); setError(""); },
+    onError: e => setError(e.message),
+  });
+  const partialSelection = useRef("");
   const [activeId, setActiveId] = useState<number | null>(() => readActive(videoId));
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -41,6 +49,23 @@ export default function useSubtitleQuickActions(videoId: number, onReady: (track
   });
   const pending = (jobs.data?.items || []).find(j =>
     ["subtitle_generate", "subtitle_translate"].includes(j.kind) && running(j));
+  useEffect(() => {
+    const job = active.data && running(active.data) ? active.data : pending;
+    const trackId = job?.result?.track_id;
+    if (!job || !running(job) || typeof trackId !== "number") return;
+    const key = `${videoId}:${job.id}:${trackId}`;
+    if (partialSelection.current === key) return;
+    let disposed = false;
+    subtitleApi<SubtitleTrack>(`/subtitles/${trackId}`).then(track => {
+      if (disposed) return;
+      partialSelection.current = key;
+      qc.setQueryData<SubtitleTrack[]>(["subtitles", videoId], old => [track, ...(old || []).filter(t => t.id !== track.id)]);
+      onReadyRef.current(track);
+      setMessage("已显示完成的字幕片段，后台继续处理。");
+    }).catch(() => { void qc.invalidateQueries({ queryKey: ["subtitles", videoId] }); });
+    return () => { disposed = true; };
+  }, [active.data?.result?.track_id, active.data?.state, pending?.result?.track_id, pending?.id, videoId, qc]);
+
   const finish = () => {
     setActiveId(null);
     try { sessionStorage.removeItem(activeKey(videoId)); } catch { /* optional persistence */ }
@@ -103,7 +128,7 @@ export default function useSubtitleQuickActions(videoId: number, onReady: (track
   const busy = submit.isPending || !!activeId || !!pending;
   const ready = config.isSuccess && options.isSuccess && jobs.isSuccess;
   const start = (kind: "generate" | "translate", trackId?: number) => {
-    if (!ready || busy || submitting.current || (kind === "translate" && !trackId)) return;
+    if (!ready || busy || toggle.isPending || submitting.current || (kind === "translate" && !trackId)) return;
     submitting.current = true;
     setMessage(""); setError("");
     submit.mutate({ kind, trackId });
@@ -118,6 +143,7 @@ export default function useSubtitleQuickActions(videoId: number, onReady: (track
     start, busy, ready, job: active.data && running(active.data) ? active.data : pending,
     message, error: error || active.error?.message || config.error?.message || options.error?.message || jobs.error?.message,
     cancel, asrModel, translationModel, settings, saved,
+    autoTranslate: saved?.auto_translate ?? false, setAutoTranslate: toggle.mutate, savingToggle: toggle.isPending,
     refresh: () => { void config.refetch(); void options.refetch(); void jobs.refetch(); if (activeId) void active.refetch(); },
   };
 }

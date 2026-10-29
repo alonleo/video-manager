@@ -23,6 +23,8 @@ dependencies = [
     "pillow>=12,<13",
     "pillow-heif>=1,<2",
     "cryptography>=44,<51",
+    "edge-tts>=7.2,<8",
+    "numpy>=2,<3",
 ]
 
 [project.optional-dependencies]

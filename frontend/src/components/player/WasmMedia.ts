@@ -4,11 +4,13 @@
  */
 const RENDER_MODE_FIT = 0; // Preserve the whole frame, including in portrait fullscreen.
 const ENGINE_ROOT = "/player-engine/libmedia-1.3.1";
+import { browserPlaybackCapacity, choosePreloadSeconds, estimateBufferedSeconds } from "./playbackBuffer";
 type Stream = { mediaType: string; codecparProxy: { codecId: number; codecType: number }; metadata?: Record<string, unknown> };
 type Engine = {
   currentTime: bigint;
   load(source: string, options: { ext?: string }): Promise<void>;
   play(options: { audio: boolean; video: boolean; subtitle: boolean }): Promise<void>;
+  playNextFrame(): Promise<void>;
   pause(): Promise<void>;
   seek(ms: bigint): Promise<void>;
   resume(): Promise<void>;
@@ -17,7 +19,7 @@ type Engine = {
   getDuration(): bigint;
   getMinStartPTS(): bigint;
   getStreams(): Stream[];
-  getStats(): { videoFrameRenderCount?: number };
+  getStats(): { videoFrameRenderCount?: number; videoPacketQueueLength?: number; videoRenderFramerate?: number };
   setVolume(volume: number): void;
   setPlaybackRate(rate: number): void;
   setSubtitleEnable(enabled: boolean): void;
@@ -51,7 +53,8 @@ export default class WasmMedia extends EventTarget {
   seeking = false;
   duration = 0;
   error: Error | null = null;
-  readonly buffered = { length: 0, start: (_i: number) => 0, end: (_i: number) => 0 };
+  private bufferedEnd = 0;
+  readonly buffered = { length: 0, start: (_i: number) => 0, end: (_i: number) => this.bufferedEnd };
   private engine: Engine | null = null;
   private chain: Promise<void> = Promise.resolve();
   private disposed = false;
@@ -66,6 +69,7 @@ export default class WasmMedia extends EventTarget {
   private seekQueued = false;
   private observer: ResizeObserver | null = null;
   private loading: Promise<void> | null = null;
+  private preloadSeconds = 4;
   constructor(private surface: HTMLDivElement) { super(); }
   private emit(name: string) { if (!this.disposed) this.dispatchEvent(new Event(name)); }
   private fail(error: unknown) {
@@ -144,6 +148,7 @@ export default class WasmMedia extends EventTarget {
       const module = await loadEngine();
       if (this.disposed) return;
       module.default.setLogLevel(2);
+      this.preloadSeconds = choosePreloadSeconds(browserPlaybackCapacity());
       const engine = new module.default({
         container: this.surface,
         wasmBaseUrl: new URL(ENGINE_ROOT, window.location.href).href,
@@ -153,7 +158,7 @@ export default class WasmMedia extends EventTarget {
         checkUseMSE: () => false,
         enableWorker: true,
         enableAudioWorklet: !!window.isSecureContext,
-        preLoadTime: 1,
+        preLoadTime: this.preloadSeconds,
       });
       this.engine = engine;
       engine.setRenderMode(RENDER_MODE_FIT);
@@ -163,6 +168,10 @@ export default class WasmMedia extends EventTarget {
       engine.on("error", error => this.fail(error));
       engine.on("time", () => {
         if (!this.seeking && this.pendingSeek === null) this.position = Math.max(0, Number(engine.currentTime) / 1000 - this.timelineOffset);
+        const ahead = estimateBufferedSeconds(engine.getStats(), this.preloadSeconds);
+        this.bufferedEnd = Math.min(this.duration, this.position + ahead);
+        this.buffered.length = ahead > 0 ? 1 : 0;
+        this.emit("progress");
         this.emit("timeupdate");
       });
       engine.on("firstVideoRendered", () => {
@@ -207,18 +216,25 @@ export default class WasmMedia extends EventTarget {
           engine.resize(this.surface.clientWidth, this.surface.clientHeight);
       });
       this.observer.observe(this.surface);
-      this.emit("loadedmetadata"); this.emit("canplay");
+      this.emit("loadedmetadata");
+      // Build the video decoder and render the first frame before the user seeks.
+      // This does not start audio and keeps the player paused.
+      await this.withDeadline(engine.playNextFrame(), engine, 12000);
+      this.bufferedEnd = Math.min(this.duration, this.position + this.preloadSeconds);
+      this.buffered.length = this.bufferedEnd > this.position ? 1 : 0;
+      this.emit("progress");
+      this.emit("canplay");
     }).catch(error => { this.fail(error); });
     return this.loading;
   }
-  private async withDeadline(operation: Promise<void>, engine: Engine) {
+  private async withDeadline(operation: Promise<void>, engine: Engine, timeoutMs = 30000) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([operation, new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           void engine.stop().catch(() => {});
           reject(new Error("解码超时：此文件的编码可能暂不支持，或设备解码速度不足。"));
-        }, 30000);
+        }, timeoutMs);
       })]);
     } finally { if (timer) clearTimeout(timer); }
   }

@@ -15,6 +15,8 @@ from app.services.photos import require_video
 from app.db import get_session
 from app.models import Job, JobState, SubtitleTrack
 from app.services import subtitle_config as config_svc
+from app.services import model_uninstall
+from app.services import subtitle_partial
 from app.services import subtitle_translation_local as local_translation
 from app.services.subtitle_config import SubtitleConfig
 from app.services.subtitle_options import SubtitleTaskOptions
@@ -54,6 +56,7 @@ class EditBody(BaseModel):
 
 
 class GenerateBody(BaseModel):
+    auto_translate: bool = False
     provider: Literal["local", "api"]
     model: str = Field(min_length=1, max_length=150)
     language: str = Field(default="auto", pattern=r"^(auto|[a-z]{2,3})$")
@@ -78,7 +81,7 @@ async def get_track(session, track_id):
     return track
 
 
-def track_out(track, detail=False):
+def track_out(track, detail=False, building=False):
     data = {
         name: getattr(track, name)
         for name in (
@@ -93,7 +96,8 @@ def track_out(track, detail=False):
             "created_at",
         )
     }
-    data.update(cue_count=len(track.cues), bilingual=bool(track.source_cues))
+    data.update(cue_count=len(track.cues), bilingual=bool(track.source_cues),
+                partial=subtitle_partial.is_partial(track), building=building)
     if detail:
         data["cues"] = track.cues
     return data
@@ -153,6 +157,17 @@ async def models_download(body: DownloadBody, session: AsyncSession = Depends(ge
     return await enqueue_unique("subtitle_model_download", body.model_dump(), session)
 
 
+@router.post("/subtitle-models/uninstall")
+async def models_uninstall(body: DownloadBody, session: AsyncSession = Depends(get_session)):
+    async with ENQUEUE_LOCK:
+        try:
+            return await model_uninstall.uninstall(body.engine, body.model, session)
+        except model_uninstall.ModelBusy as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+
 @router.post("/subtitle-settings/test/{provider}")
 async def provider_test(
     provider: Literal["asr_api", "translation_api", "ollama"],
@@ -196,7 +211,13 @@ async def list_tracks(video_id: int, session: AsyncSession = Depends(get_session
             .order_by(SubtitleTrack.id.desc())
         )
     ).all()
-    return [track_out(t) for t in tracks]
+    results = await session.scalars(select(Job.result).where(
+        Job.video_id == video_id,
+        Job.state.in_([JobState.queued, JobState.running]),
+        Job.kind.in_(["subtitle_generate", "subtitle_translate"]),
+    ))
+    active_ids = {result.get(key) for result in results if result for key in ("track_id", "source_track_id")}
+    return [track_out(t, building=t.id in active_ids) for t in tracks]
 
 
 @router.post("/videos/{video_id}/subtitles/import", status_code=201)
@@ -231,19 +252,36 @@ async def generate_track(
             raise HTTPException(422, "未知 Whisper 模型")
         if not config_svc.model_ready(body.model):
             raise HTTPException(409, "请先到 AI 设置下载所选模型")
-    return await enqueue_unique(
-        "subtitle_generate", {"video_id": video_id, **body.model_dump()}, session
-    )
+    payload = {"video_id": video_id, **body.model_dump(exclude={"auto_translate"})}
+    if body.auto_translate:
+        from app.services.subtitle_options import read_options, translation_parameters
+        config = await config_svc.read_config(session)
+        options = await read_options(session, video_id)
+        translation = TranslateBody(**translation_parameters(config, options))
+        if translation.provider == "local":
+            try:
+                local_translation.language_code(translation.target_language)
+                if translation.source_language != "auto":
+                    local_translation.language_code(translation.source_language)
+                if not local_translation.runtime_ready() or not local_translation.model_ready(translation.model):
+                    raise HTTPException(409, "请先安装本地翻译依赖并下载翻译模型")
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from None
+        payload["translation"] = translation.model_dump()
+    return await enqueue_unique("subtitle_generate", payload, session)
 
 
 @router.get("/subtitles/{track_id}")
 async def detail_track(track_id: int, session: AsyncSession = Depends(get_session)):
-    return track_out(await get_track(session, track_id), True)
+    track = await get_track(session, track_id)
+    return track_out(track, True, await subtitle_partial.building(session, track_id))
 
 
 @router.put("/subtitles/{track_id}")
 async def edit_track(track_id: int, body: EditBody, session: AsyncSession = Depends(get_session)):
     track = await get_track(session, track_id)
+    if await subtitle_partial.building(session, track_id):
+        raise HTTPException(409, "字幕仍在后台生成，请完成或取消任务后再编辑")
     if track.version != body.version:
         raise HTTPException(409, "字幕已在其他页面修改，请重新载入后编辑")
     changed = await session.execute(
@@ -265,7 +303,10 @@ async def edit_track(track_id: int, body: EditBody, session: AsyncSession = Depe
 
 @router.delete("/subtitles/{track_id}", status_code=204)
 async def delete_track(track_id: int, session: AsyncSession = Depends(get_session)):
-    await session.delete(await get_track(session, track_id))
+    track = await get_track(session, track_id)
+    if await subtitle_partial.building(session, track_id):
+        raise HTTPException(409, "字幕仍在后台生成，请先取消任务再删除")
+    await session.delete(track)
     await session.commit()
 
 
@@ -274,6 +315,8 @@ async def translate_track(
     track_id: int, body: TranslateBody, session: AsyncSession = Depends(get_session)
 ):
     track = await get_track(session, track_id)
+    if await subtitle_partial.building(session, track_id):
+        raise HTTPException(409, "原字幕仍在后台生成，请完成或取消任务后再翻译")
     if body.provider == "local":
         try:
             local_translation.language_code(
@@ -347,7 +390,7 @@ async def generate_saved(video_id: int, session: AsyncSession = Depends(get_sess
     await require_video(session, video_id)
     config = await config_svc.read_config(session)
     options = await read_options(session, video_id)
-    return await generate_track(video_id, GenerateBody(**generate_parameters(config, options)), session)
+    return await generate_track(video_id, GenerateBody(**generate_parameters(config, options), auto_translate=options.auto_translate), session)
 
 
 @router.post("/subtitles/{track_id}/translate-saved", status_code=202)

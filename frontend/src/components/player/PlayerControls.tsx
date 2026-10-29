@@ -3,13 +3,16 @@ import { createPortal } from "react-dom";
 import Icon from "../Icon";
 import type WasmMedia from "./WasmMedia";
 import PlayerCaptions, { type PlayerCaptionsState } from "./PlayerCaptions";
+import PlayerDubbing, { type PlayerDubbingState } from "./PlayerDubbing";
 import { formatTime } from "../../lib/format";
 const playerTime = (ms: number) => ms > 0 ? formatTime(ms) : "0:00";
 
 type Props = {
   videoRef: RefObject<WasmMedia | null>;
+  media: WasmMedia | null;
   stageRef: RefObject<HTMLDivElement | null>;
   captions: PlayerCaptionsState;
+  dubbing: PlayerDubbingState;
   unavailable: boolean;
   cinema?: boolean;
   onCinema?: () => void;
@@ -17,7 +20,7 @@ type Props = {
   onAutoCropBlackBarsChange?: (enabled: boolean) => void;
   onVisibilityChange: (visible: boolean) => void;
 };
-export default function PlayerControls({ videoRef, stageRef, captions, unavailable, cinema, onCinema, autoCropBlackBars, onAutoCropBlackBarsChange, onVisibilityChange }: Props) {
+export default function PlayerControls({ videoRef, media, stageRef, captions, dubbing, unavailable, cinema, onCinema, autoCropBlackBars, onAutoCropBlackBarsChange, onVisibilityChange }: Props) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -28,7 +31,7 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
   const [fullscreen, setFullscreen] = useState(false);
   const [visible, setVisible] = useState(true);
   const [focused, setFocused] = useState(false);
-  const [menu, setMenu] = useState<"captions" | "speed" | "volume" | null>(null);
+  const [menu, setMenu] = useState<"captions" | "dubbing" | "speed" | "volume" | null>(null);
   const [notice, setNotice] = useState("");
   const controls = useRef<HTMLDivElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
@@ -127,7 +130,7 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
       document.removeEventListener("fullscreenchange", full);
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [videoRef, stageRef, togglePlay, toggleFullscreen, reveal, unavailable]);
+  }, [videoRef, media, stageRef, togglePlay, toggleFullscreen, reveal, unavailable]);
   useEffect(() => { reveal(); }, [playing, menu, reveal]);
   useEffect(() => {
     if (!menu) return;
@@ -166,10 +169,10 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
   useEffect(() => { onVisibilityChange(shown); }, [shown, onVisibilityChange]);
   const toggleMenu = (next: typeof menu) => setMenu(v => v === next ? null : next);
   const percent = duration ? Math.min(100, time / duration * 100) : 0;
-  const menuLabel = menu === "captions" ? "字幕菜单" : menu === "speed" ? "播放速度" : "音量设置";
+  const menuLabel = menu === "captions" ? "字幕菜单" : menu === "dubbing" ? "语音配音菜单" : menu === "speed" ? "播放速度" : "音量设置";
   const menuPanel = menu && <div id="player-control-menu" className={`player-control-menu menu-${menu}`} role="region"
-        aria-label={menu === "captions" ? "字幕菜单" : menu === "speed" ? "播放速度" : "音量设置"}>
-        {menu === "captions" ? <PlayerCaptions captions={captions} /> : menu === "speed" ? <>
+        aria-label={menu === "captions" ? "字幕菜单" : menu === "dubbing" ? "语音配音菜单" : menu === "speed" ? "播放速度" : "音量设置"}>
+        {menu === "captions" ? <PlayerCaptions captions={captions} /> : menu === "dubbing" ? <PlayerDubbing dubbing={dubbing} subtitleId={captions.track?.id} onSelect={() => setMenu(null)} /> : menu === "speed" ? <>
           <div className="player-menu-title"><strong>播放速度</strong></div>
           <div className="player-speed-options">
             {[0.5, 0.75, 1, 1.25, 1.5, 2].map(value => <button type="button" key={value} aria-pressed={rate === value}
@@ -223,6 +226,8 @@ export default function PlayerControls({ videoRef, stageRef, captions, unavailab
         <button type="button" className={`player-control-button ${captions.url ? "captions-active" : ""}`} aria-label="字幕" title="字幕与语言"
           aria-expanded={menu === "captions"} aria-controls={menu === "captions" ? "player-control-menu" : undefined} onClick={() => toggleMenu("captions")}>
           <Icon name="captions" size={22} /></button>
+        <button type="button" className={`player-control-button player-dubbing-button ${dubbing.track ? "player-control-active" : ""}`} aria-label="语音配音" title="语音配音与音轨选择"
+          aria-expanded={menu === "dubbing"} aria-controls={menu === "dubbing" ? "player-control-menu" : undefined} onClick={() => toggleMenu("dubbing")}>配音</button>
         {onAutoCropBlackBarsChange && <button type="button" className={`player-control-button ${autoCropBlackBars ? "player-control-active" : ""}`}
           aria-label={autoCropBlackBars ? "关闭自动去黑边" : "开启自动去黑边"} aria-pressed={autoCropBlackBars}
           title={autoCropBlackBars ? "自动去黑边：已开启" : "自动去黑边：已关闭"}

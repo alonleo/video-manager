@@ -8,6 +8,13 @@
 
 set -uo pipefail
 
+# 已安装开机服务时统一通过 systemd 管理，避免重复进程。
+if systemctl --user is-enabled video-manage.target >/dev/null 2>&1; then
+  systemctl --user restart video-manage.target
+  systemctl --user --no-pager status video-manage-api.service video-manage-worker.service video-manage-enhancement-worker.service video-manage-move-worker.service
+  exit $?
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND="$ROOT/backend"
 VENV="$BACKEND/.venv/bin"

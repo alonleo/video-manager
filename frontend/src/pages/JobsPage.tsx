@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getJob, listJobs } from "../api/client";
 import type { Job } from "../api/types";
@@ -7,7 +7,6 @@ import Icon from "../components/Icon";
 import ConversionActions from "../components/ConversionActions";
 import MoveJobActions from "../components/MoveJobActions";
 import DownloadActions from "../components/DownloadActions";
-import TaskProgress from "../components/TaskProgress";
 import "../components/downloads.css";
 import { cn } from "../lib/cn";
 import { formatRelative } from "../lib/format";
@@ -39,7 +38,7 @@ const RESULT_LABEL: Record<string, string> = {
 
 function JobRow({ job }: { job: Job }) {
   const result = Object.entries(
-    ["move_video", "convert_format", "download_url", "enhance_video", "enhance_preview"].includes(job.kind) ? {} : (job.result ?? {}),
+    ["move_video", "convert_format", "download_url", "enhance_video", "enhance_preview", "dub_prepare", "dub_render"].includes(job.kind) ? {} : (job.result ?? {}),
   ).filter(([, value]) => typeof value === "number" && value > 0);
   return (
     <article className="card job-card flex flex-wrap items-center gap-3 text-sm">
@@ -57,18 +56,11 @@ function JobRow({ job }: { job: Job }) {
       <span className={cn("chip", STATE_STYLE[job.state])}>
         {STATE_LABEL[job.state]}
       </span>
-      {job.message && <span className="text-xs text-muted">{job.message}</span>}
+      {job.message && !["queued", "running"].includes(job.state) && <span className="text-xs text-muted">{job.message}</span>}
       <span className="ml-auto text-xs text-muted">
         {formatRelative(job.created_at)}
       </span>
-      <TaskProgress
-        state={job.state}
-        progress={job.progress}
-        createdAt={job.created_at}
-        startedAt={job.started_at}
-        finishedAt={job.finished_at}
-        label={`任务 ${job.id}`}
-      />
+
       {result.length > 0 && (
         <div className="job-results w-full">
           {result.map(([key, value]) => (
@@ -81,6 +73,11 @@ function JobRow({ job }: { job: Job }) {
       <ConversionActions job={job} />
       <DownloadActions job={job} />
       <MoveJobActions job={job} />
+      {["dub_prepare", "dub_render"].includes(job.kind) && job.video_id && <Link className="btn-outline" to={"/videos/" + job.video_id + "/dubbing"}>打开译配工作台</Link>}
+      {job.kind === "dub_reference_transcribe" && <Link className="btn-outline" to="/settings/dubbing#reference-voices">查看参考音频原文</Link>}
+      {job.kind === "dub_model_download" && <Link className="btn-outline" to="/settings/dubbing">打开本地语音模型</Link>}
+      {job.kind === "dub_generate" && job.video_id && <Link className="btn-outline" to={"/videos/" + job.video_id}>在播放器中选择配音</Link>}
+      {job.kind === "dub_render" && job.state === "done" && <a className="btn-outline" href={"/api/jobs/" + job.id + "/dubbing-file?download=true"}>下载配音视频</a>}
       {job.error && (
         <div className="w-full break-words text-xs text-red-400">
           {job.error}

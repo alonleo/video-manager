@@ -183,8 +183,8 @@ export const browseStorage = (id: number, path = "") =>
 
 // ---------------------------------------------------------------- 任务 / 健康
 
-export const listJobs = (limit = 50) =>
-  request<{ items: Job[]; total: number }>(`/jobs?limit=${limit}`);
+export const listJobs = (limit = 50, state?: Job["state"]) =>
+  request<{ items: Job[]; total: number }>(`/jobs?limit=${limit}${state ? `&state=${state}` : ""}`);
 
 export const getHealth = () => request<Health>("/health");
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type WasmMedia from "./WasmMedia";
 import type { PlayerCaptionsState } from "./PlayerCaptions";
 import { captionStyleProperties } from "../../lib/captionStyle";
@@ -27,15 +27,20 @@ export default function WasmCaptions({ media, captions }: { media: WasmMedia | n
   const [cues, setCues] = useState<Cue[]>([]);
   const [time, setTime] = useState(0);
   const [failed, setFailed] = useState(false);
+  const lastIdentity = useRef("");
   useEffect(() => {
     const controller = new AbortController();
-    setCues([]); setFailed(false);
+    const identity = captions.url?.replace(/([?&])version=\d+/, "") || "";
+    const changed = identity !== lastIdentity.current;
+    if (changed) setCues([]);
+    lastIdentity.current = identity;
+    setFailed(false);
     if (captions.url) {
       fetch(captions.url, { signal: controller.signal }).then(response => {
         if (!response.ok) throw new Error("字幕加载失败");
         return response.text();
       }).then(text => { if (!controller.signal.aborted) setCues(parseVtt(text)); })
-        .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+        .catch(() => { if (!controller.signal.aborted && changed) setFailed(true); });
     }
     return () => controller.abort();
   }, [captions.url]);
