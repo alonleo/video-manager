@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, InputNumber, Select } from "@arco-design/web-react";
 import {
   enhanceVideo,
   enhancementCapabilities,
@@ -116,9 +117,7 @@ export default function EnhanceVideoActions({
     <>
       {toolbar &&
         createPortal(
-          <button
-            type="button"
-            className="btn-outline"
+          <Button
             disabled={!sources.length}
             title={!sources.length ? "画质增强需要可用的本地视频" : undefined}
             aria-haspopup="dialog"
@@ -131,7 +130,7 @@ export default function EnhanceVideoActions({
           >
             <Icon name="enhance" size={16} />
             画质增强
-          </button>,
+          </Button>,
           toolbar,
         )}
       {open && (
@@ -166,19 +165,17 @@ export default function EnhanceVideoActions({
               {sources.length > 1 && (
                 <label className="enhancement-field">
                   处理来源
-                  <select
-                    className="input"
+                  <Select
                     value={options.source_id}
-                    onChange={(e) =>
-                      change("source_id", Number(e.target.value))
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
+                      change("source_id", Number(value))
                     }
-                  >
-                    {sources.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.local_path?.split("/").pop()}
-                      </option>
-                    ))}
-                  </select>
+                    options={sources.map((s) => ({
+                      value: s.id,
+                      label: s.local_path?.split("/").pop(),
+                    }))}
+                  />
                 </label>
               )}
               <div
@@ -215,17 +212,16 @@ export default function EnhanceVideoActions({
               {options.method === "ai" && (
                 <label className="enhancement-field">
                   超分模型
-                  <select
-                    className="input"
+                  <Select
                     value={options.ai_model}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "ai_model",
-                        e.target.value as EnhanceOptions["ai_model"],
+                        value as EnhanceOptions["ai_model"],
                       )
                     }
-                  >
-                    {(
+                    options={(
                       capabilities.data?.models ?? [
                         {
                           id: "general",
@@ -240,15 +236,13 @@ export default function EnhanceVideoActions({
                           size_bytes: 0,
                         },
                       ]
-                    ).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                        {m.available
-                          ? ` · 已安装 ${formatSize(m.size_bytes)}`
-                          : " · 未就绪"}
-                      </option>
-                    ))}
-                  </select>
+                    ).map((m) => ({
+                      value: m.id,
+                      label: `${m.name}${m.available
+                        ? ` · 已安装 ${formatSize(m.size_bytes)}`
+                        : " · 未就绪"}`,
+                    }))}
+                  />
                   <small>
                     AI
                     会推测细节，运动画面可能出现闪烁；先查看预览再处理完整视频。
@@ -258,66 +252,66 @@ export default function EnhanceVideoActions({
               <div className="enhancement-fields">
                 <label className="enhancement-field">
                   目标分辨率
-                  <select
-                    className="input"
+                  <Select
                     value={options.resolution}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "resolution",
-                        e.target.value as EnhanceOptions["resolution"],
+                        value as EnhanceOptions["resolution"],
                       )
                     }
-                  >
-                    <option value="source" disabled={options.method === "ai"}>
-                      保持原分辨率
-                    </option>
-                    <option value="2x">2 倍放大</option>
-                    <option value="1080">1080p</option>
-                    <option value="1440">1440p</option>
-                    <option value="2160">4K · 2160p</option>
-                  </select>
+                    options={[
+                      { label: "保持原分辨率", value: "source", disabled: options.method === "ai" },
+                      { label: "2 倍放大", value: "2x" },
+                      { label: "1080p", value: "1080" },
+                      { label: "1440p", value: "1440" },
+                      { label: "4K · 2160p", value: "2160" },
+                    ]}
+                  />
                   <small>保持原画面比例，自动适配横屏和竖屏。</small>
                 </label>
                 <label className="enhancement-field">
                   目标帧率
-                  <select
-                    className="input"
+                  <Select
                     value={options.fps ?? ""}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "fps",
-                        e.target.value
-                          ? (Number(e.target.value) as EnhanceOptions["fps"])
+                        value
+                          ? (Number(value) as EnhanceOptions["fps"])
                           : null,
                       )
                     }
-                  >
-                    <option value="">保持原帧率</option>
-                    {[24, 25, 30, 48, 50, 60, 120].map((f) => (
-                      <option key={f} value={f}>
-                        {f} fps
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { label: "保持原帧率", value: "" },
+                      ...[24, 25, 30, 48, 50, 60, 120].map((f) => ({
+                        label: `${f} fps`,
+                        value: f,
+                      })),
+                    ]}
+                  />
                   <small>增加帧率不会改变视频时长或播放速度。</small>
                 </label>
               </div>
               {options.fps !== null && (
                 <label className="enhancement-field">
                   帧率处理
-                  <select
-                    className="input"
+                  <Select
                     value={options.frame_method}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "frame_method",
-                        e.target.value as EnhanceOptions["frame_method"],
+                        value as EnhanceOptions["frame_method"],
                       )
                     }
-                  >
-                    <option value="motion">运动补帧 · 生成中间画面</option>
-                    <option value="duplicate">快速重复帧 · 只调整帧率</option>
-                  </select>
+                    options={[
+                      { label: "运动补帧 · 生成中间画面", value: "motion" },
+                      { label: "快速重复帧 · 只调整帧率", value: "duplicate" },
+                    ]}
+                  />
                   <small>
                     {options.frame_method === "motion"
                       ? "高于原帧率时估计物体运动并生成新帧；快速运动或遮挡处可能出现伪影。"
@@ -328,36 +322,36 @@ export default function EnhanceVideoActions({
               <div className="enhancement-fields">
                 <label className="enhancement-field">
                   输出质量
-                  <select
-                    className="input"
+                  <Select
                     value={options.quality}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "quality",
-                        e.target.value as EnhanceOptions["quality"],
+                        value as EnhanceOptions["quality"],
                       )
                     }
-                  >
-                    <option value="quality">自动质量 · 推荐</option>
-                    <option value="bitrate">指定目标码率</option>
-                  </select>
+                    options={[
+                      { label: "自动质量 · 推荐", value: "quality" },
+                      { label: "指定目标码率", value: "bitrate" },
+                    ]}
+                  />
                 </label>
                 {options.quality === "bitrate" ? (
                   <label className="enhancement-field">
                     目标视频码率（Mbps）
-                    <input
-                      className="input"
-                      type="number"
+                    <InputNumber
                       min={1}
                       max={150}
                       step={0.5}
+                      style={{ width: "100%" }}
                       value={
                         Number.isFinite(options.bitrate_mbps)
                           ? options.bitrate_mbps
-                          : ""
+                          : undefined
                       }
-                      onChange={(e) =>
-                        change("bitrate_mbps", e.target.valueAsNumber)
+                      onChange={(value) =>
+                        change("bitrate_mbps", Number(value))
                       }
                     />
                     <small>
@@ -375,19 +369,20 @@ export default function EnhanceVideoActions({
                 <summary>更多设置</summary>
                 <label className="enhancement-field">
                   编码方式
-                  <select
-                    className="input"
+                  <Select
                     value={options.encoder}
-                    onChange={(e) =>
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
                       change(
                         "encoder",
-                        e.target.value as EnhanceOptions["encoder"],
+                        value as EnhanceOptions["encoder"],
                       )
                     }
-                  >
-                    <option value="auto">自动 · 优先硬件加速</option>
-                    <option value="software">软件编码 · H.264</option>
-                  </select>
+                    options={[
+                      { label: "自动 · 优先硬件加速", value: "auto" },
+                      { label: "软件编码 · H.264", value: "software" },
+                    ]}
+                  />
                 </label>
                 <label className="basic-checkbox">
                   <input
@@ -404,9 +399,7 @@ export default function EnhanceVideoActions({
               <div className="enhancement-preview-controls">
                 <label className="enhancement-field">
                   预览起点（秒）
-                  <input
-                    className="input"
-                    type="number"
+                  <InputNumber
                     min={0}
                     step={1}
                     max={
@@ -414,25 +407,25 @@ export default function EnhanceVideoActions({
                         ? Math.max(0, video.duration_ms / 1000 - 0.1)
                         : undefined
                     }
+                    style={{ width: "100%" }}
                     value={
                       Number.isFinite(options.preview_start)
                         ? options.preview_start
-                        : ""
+                        : undefined
                     }
-                    onChange={(e) =>
-                      change("preview_start", e.target.valueAsNumber)
+                    onChange={(value) =>
+                      change("preview_start", Number(value))
                     }
                   />
                 </label>
-                <button
-                  type="button"
-                  className="btn-outline"
+                <Button
                   disabled={invalid || submit.isPending || !!previewBusy}
+                  loading={!!previewBusy}
                   onClick={() => submit.mutate(true)}
                 >
                   <Icon name="play" size={15} />
-                  {previewBusy ? "正在生成预览…" : "生成 5 秒预览"}
-                </button>
+                  生成 5 秒预览
+                </Button>
               </div>
             </fieldset>
             {capabilities.isLoading && options.method === "ai" && (
@@ -443,9 +436,9 @@ export default function EnhanceVideoActions({
             {capabilities.isError && (
               <p className="inline-alert" role="alert">
                 硬件与模型信息读取失败。
-                <button type="button" onClick={() => capabilities.refetch()}>
+                <Button size="small" onClick={() => capabilities.refetch()}>
                   重试
-                </button>
+                </Button>
               </p>
             )}
             {submit.isError && (
@@ -497,21 +490,21 @@ export default function EnhanceVideoActions({
               ) : null}
             </div>
             <div className="directory-dialog-actions">
-              <button
-                type="button"
-                className="btn-outline"
+              <Button
                 disabled={submit.isPending}
                 onClick={() => setOpen(false)}
               >
                 关闭
-              </button>
-              <button
-                className="btn-primary"
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={submit.isPending}
                 disabled={invalid || submit.isPending}
               >
-                {submit.isPending ? "正在提交…" : "开始完整增强"}
+                开始完整增强
                 <Icon name="arrow" size={16} />
-              </button>
+              </Button>
             </div>
           </form>
         </DirectoryDialog>

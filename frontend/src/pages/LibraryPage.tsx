@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Button, Input, Select } from "@arco-design/web-react";
 import { listStorages, listTags, listVideos } from "../api/client";
 import VideoCard from "../components/VideoCard";
 import TagManager from "../components/TagManager";
@@ -89,7 +90,7 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
   );
   const view = params.get("view") === "list" ? "list" : "grid";
   const [input, setInput] = useState(q);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<ComponentRef<typeof Input>>(null);
   const pageSize = 24;
   useEffect(() => {
     setInput(q);
@@ -290,35 +291,34 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
             </span>
           </div>
           <div className="view-switch" role="group" aria-label="浏览方式">
-            <button
+            <Button
               className={cn(view === "grid" && "selected")}
               onClick={() => update("view", "grid")}
               aria-label="网格视图"
               aria-pressed={view === "grid"}
             >
               <Icon name="grid" size={17} />
-            </button>
-            <button
+            </Button>
+            <Button
               className={cn(view === "list" && "selected")}
               onClick={() => update("view", "list")}
               aria-label="列表视图"
               aria-pressed={view === "list"}
             >
               <Icon name="list" size={19} />
-            </button>
+            </Button>
           </div>
         </div>
         <div className="library-toolbar">
           <div className="library-search">
             <Icon name="search" size={18} />
-            <input
+            <Input
               ref={searchRef}
               id="library-search"
-              type="search"
               aria-label={`搜索${noun}标题或描述`}
               placeholder="搜索标题、描述，找到那一帧…"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={setInput}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
                   setInput("");
@@ -327,7 +327,7 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
               }}
             />
             {input ? (
-              <button
+              <Button
                 onClick={() => {
                   setInput("");
                   update("q", "");
@@ -336,34 +336,25 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
                 aria-label="清空搜索"
               >
                 <Icon name="close" size={16} />
-              </button>
+              </Button>
             ) : (
               <kbd>/</kbd>
             )}
           </div>
-          <button
-            className={cn(
-              "btn-outline favorite-filter",
-              favorite && "is-selected",
-            )}
+          <Button
+            className={cn("favorite-filter", favorite && "is-selected")}
             aria-pressed={favorite}
             onClick={() => update("favorite", favorite ? "" : "true")}
           >
             <Icon name="star" size={17} />
             仅看收藏
-          </button>
-          <select
-            className="input sort-select"
-            aria-label="排序方式"
+          </Button>
+          <Select
+            className="sort-select"
             value={sort}
-            onChange={(e) => update("sort", e.target.value)}
-          >
-            {SORTS.filter(s => !isPhoto || s.value !== "duration_desc").map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+            options={SORTS.filter((s) => !isPhoto || s.value !== "duration_desc")}
+            onChange={(value) => update("sort", value)}
+          />
         </div>
         <CategoryFilter mediaType={mediaType}
           value={category}
@@ -372,22 +363,22 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
         <div className="tag-toolbar">
           {!!tags.data?.length && (
             <div className="tag-filters" aria-label="按标签筛选">
-              <button
+              <Button
                 className={cn(!tag && "selected")}
                 aria-pressed={!tag}
                 onClick={() => update("tag", "")}
               >
                 全部标签
-              </button>
+              </Button>
               {tags.data.map((t) => (
-                <button
+                <Button
                   key={t.id}
                   className={cn(tag === t.name && "selected")}
                   aria-pressed={tag === t.name}
                   onClick={() => update("tag", tag === t.name ? "" : t.name)}
                 >
                   {t.name}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -418,10 +409,10 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
                     : "已筛选标签"}
               {tag ? ` · ${tag}` : ""}
             </span>
-            <button onClick={clear}>
+            <Button onClick={clear}>
               清除筛选
               <Icon name="close" size={13} />
-            </button>
+            </Button>
           </div>
         )}
         <div
@@ -447,10 +438,10 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
               <Icon name="activity" size={32} />
               <h3>影像库暂时没有响应</h3>
               <p>{(videos.error as Error).message}</p>
-              <button className="btn-outline" onClick={() => videos.refetch()}>
+              <Button onClick={() => videos.refetch()}>
                 <Icon name="refresh" size={16} />
                 重新加载
-              </button>
+              </Button>
             </div>
           )}
           {!videos.isError &&
@@ -468,10 +459,10 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
                     ? `在${isPhoto ? "照片预览" : "播放"}页点击收藏，它就会出现在这里。`
                     : "试试其他关键词，或清除筛选看看全部影像。"}
                 </p>
-                <button className="btn-outline" onClick={clear}>
+                <Button onClick={clear}>
                   查看全部影像
                   <Icon name="arrow" size={16} />
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="first-collection">
@@ -523,21 +514,19 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
         </div>
         {totalPages > 1 && (
           <nav className="pagination" aria-label={`${noun}分页`}>
-            <button
-              className="btn-outline"
+            <Button
               disabled={page <= 1 || videos.isPlaceholderData}
               onClick={() => update("page", String(page - 1))}
             >
               <Icon name="back" size={16} />
               上一页
-            </button>
+            </Button>
             <div className="pagination-pages">
               {getPageNumbers(page, totalPages).map((item) =>
                 typeof item === "number" ? (
-                  <button
+                  <Button
                     key={item}
-                    type="button"
-                    className="btn-outline pagination-number"
+                    className="pagination-number"
                     aria-label={`第 ${item} 页`}
                     aria-current={item === page ? "page" : undefined}
                     title={item === 1 ? "首页" : item === totalPages ? "末页" : undefined}
@@ -547,7 +536,7 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
                     }}
                   >
                     {item}
-                  </button>
+                  </Button>
                 ) : (
                   <span key={item} className="pagination-ellipsis" aria-hidden="true">
                     …
@@ -555,14 +544,13 @@ export default function LibraryPage({ mediaType = "video" }: { mediaType?: "vide
                 ),
               )}
             </div>
-            <button
-              className="btn-outline"
+            <Button
               disabled={page >= totalPages || videos.isPlaceholderData}
               onClick={() => update("page", String(page + 1))}
             >
               下一页
               <Icon name="arrow" size={16} />
-            </button>
+            </Button>
             <span className="pagination-summary" aria-live="polite" aria-atomic="true">
               第 {page} 页 / 共 {totalPages} 页
             </span>

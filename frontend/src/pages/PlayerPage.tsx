@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { Button } from "@arco-design/web-react";
 import Icon from "../components/Icon";
 import { MoveVideoButton } from "../components/DirectoryTools";
 import RemoveVideoButton from "../components/RemoveVideoButton";
@@ -213,17 +214,15 @@ export default function PlayerPage() {
               removalNotice: `已移除「${v.title}」的收录，原文件已保留；再次扫描对应存储源可重新收录。`,
             } });
           }} />
-          <button
-            className="btn-outline"
+          <Button
             aria-pressed={cinema}
             onClick={() => setCinema(!cinema)}
           >
             <Icon name="film" size={16} />
             {cinema ? "退出宽屏" : "宽屏模式"}
-          </button>
-          <button
+          </Button>
+          <Button
             className={cn(
-              "btn-outline",
               v.is_favorite && "border-amber-400/60 text-amber-400",
             )}
             disabled={patchMutation.isPending}
@@ -234,7 +233,7 @@ export default function PlayerPage() {
           >
             <Icon name="star" size={16} />
             {v.is_favorite ? "已收藏" : "收藏"}
-          </button>
+          </Button>
         </div>
       </div>
       {patchMutation.isError && (
@@ -291,12 +290,9 @@ export default function PlayerPage() {
                 <div className="text-sm text-muted">
                   {(playback.error as Error).message}
                 </div>
-                <button
-                  className="btn-outline mt-4"
-                  onClick={() => playback.refetch()}
-                >
+                <Button className="mt-4" onClick={() => playback.refetch()}>
                   重新加载
-                </button>
+                </Button>
               </div>
             </div>
           ) : (

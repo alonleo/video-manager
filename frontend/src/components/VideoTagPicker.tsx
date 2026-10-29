@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@arco-design/web-react";
 import { addTag, listTags, removeTag } from "../api/client";
 import type { Tag, VideoDetail } from "../api/types";
 import Icon from "./Icon";
@@ -196,28 +197,26 @@ export default function VideoTagPicker({ video }: { video: VideoDetail }) {
           />
         </label>
         {query && !exact && tags.isSuccess && !tags.isError && (
-          <button
-            type="submit"
-            className="btn-outline video-tag-create"
+          <Button
+            htmlType="submit"
+            className="video-tag-create"
             disabled={mutation.isPending}
           >
             <Icon name="plus" size={15} />
             <span>创建并添加「{query}」</span>
-          </button>
+          </Button>
         )}
       </form>
       {tags.isLoading && <p className="video-tag-empty" role="status">正在加载标签…</p>}
       {tags.isError && (
         <div className="inline-alert video-tag-error" role="alert">
           <p>标签列表加载失败：{tags.error.message}</p>
-          <button
-            type="button"
-            className="btn-outline"
+          <Button
             disabled={tags.isFetching}
             onClick={() => void tags.refetch()}
           >
             重新加载标签
-          </button>
+          </Button>
         </div>
       )}
       {tags.data && (

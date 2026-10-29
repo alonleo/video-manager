@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@arco-design/web-react";
 import { cancelJob } from "../api/client";
 import { enhancementFile, importEnhancement } from "../api/enhancement";
 import type { Job } from "../api/types";
@@ -79,10 +80,10 @@ export function EnhancementComparison({ job }: { job: Job }) {
           />
         </figure>
       </div>
-      <button type="button" className="btn-outline" onClick={toggle}>
+      <Button onClick={toggle}>
         <Icon name="play" size={14} />
         {playing ? "暂停对比" : "从头同步播放"}
-      </button>
+      </Button>
       {error && (
         <p className="inline-alert" role="alert">
           {error}
@@ -125,14 +126,12 @@ export default function EnhancementResult({
 
       {["queued", "running"].includes(job.state) && (
         <>
-          <button
-            type="button"
-            className="btn-outline"
+          <Button
             onClick={() => cancel.mutate()}
-            disabled={cancel.isPending}
+            loading={cancel.isPending}
           >
-            {cancel.isPending ? "正在取消…" : "取消增强任务"}
-          </button>
+            取消增强任务
+          </Button>
         </>
       )}
       {job.state === "done" && result && (
@@ -169,14 +168,13 @@ export default function EnhancementResult({
                   查看增强视频
                 </Link>
               ) : (
-                <button
-                  type="button"
-                  className="btn-primary"
+                <Button
+                  type="primary"
                   onClick={() => imported.mutate()}
-                  disabled={imported.isPending}
+                  loading={imported.isPending}
                 >
-                  {imported.isPending ? "正在加入…" : "加入影像库"}
-                </button>
+                  加入影像库
+                </Button>
               ))}
           </div>
           {result.preview === true &&

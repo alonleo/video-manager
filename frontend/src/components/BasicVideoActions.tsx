@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Button, Input, Select } from "@arco-design/web-react";
 import Icon from "./Icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertVideo, inspectTsRepair, listVideoConversions, renameVideo, repairTs } from "../api/client";
@@ -102,15 +103,14 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
   };
   const sourceSelect = sources.length > 1 ? (
     <label className="basic-field">选择来源
-      <select className="input" value={source?.id ?? ""} onChange={e => {
-        const selected = sources.find(s => s.id === Number(e.target.value));
+      <Select value={source?.id ?? ""} style={{ width: "100%" }} onChange={(value) => {
+        const selected = sources.find(s => s.id === Number(value));
         setSourceId(selected?.id);
         if (form === "rename" && renameFile && selected?.local_path) {
           setName(selected.local_path.split("/").pop()!.replace(/\.[^.]+$/, ""));
         }
-      }}>
-        {sources.map(s => <option value={s.id} key={s.id}>{s.local_path?.split("/").pop()}</option>)}
-      </select>
+      }}
+        options={sources.map(s => ({ value: s.id, label: s.local_path?.split("/").pop() }))} />
     </label>
   ) : null;
   const badName = !name.trim() || /[<>:"/\\|?*\x00-\x1f\x7f]/.test(name) || name.trim().endsWith(".");
@@ -118,23 +118,23 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
   return (
     <>
       {toolbar && createPortal(<>
-        <button type="button" className="btn-outline" aria-expanded={form === "rename"}
+        <Button aria-expanded={form === "rename"}
           aria-haspopup="dialog" aria-controls={form === "rename" ? panelId : undefined}
           disabled={busy} onClick={() => open("rename")}>
           <Icon name="edit" size={16} />重命名
-        </button>
-        {!isPhoto && <button type="button" className="btn-outline" aria-expanded={form === "convert"}
+        </Button>
+        {!isPhoto && <Button aria-expanded={form === "convert"}
           aria-haspopup="dialog" aria-controls={form === "convert" ? panelId : undefined}
           disabled={busy || !sources.length}
           title={!sources.length ? "转换需要可用的本地视频文件" : undefined}
           onClick={() => open("convert")}>
           <Icon name="convert" size={16} />转换格式
-        </button>}
-        {!isPhoto && isTs && <button type="button" className="btn-outline" aria-expanded={form === "ts-repair"}
+        </Button>}
+        {!isPhoto && isTs && <Button aria-expanded={form === "ts-repair"}
           aria-haspopup="dialog" aria-controls={form === "ts-repair" ? panelId : undefined}
           disabled={busy || !sources.length} onClick={() => open("ts-repair")}>
           <Icon name="refresh" size={16} />修复 TS 时长
-        </button>}
+        </Button>}
       </>, toolbar)}
       {form && (
         <DirectoryDialog key={form} dialogId={panelId} className="basic-action-dialog"
@@ -143,8 +143,8 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
       {form === "rename" && (
         <form className="basic-action-form" onSubmit={e => { e.preventDefault(); if (!badName && !busy) rename.mutate(); }}>
           <label className="basic-field">新名称{renameFile ? "（不含扩展名）" : ""}
-            <input autoFocus className="input" value={name} maxLength={180} required
-              onChange={e => setName(e.target.value)} />
+            <Input autoFocus value={name} maxLength={180} required
+              onChange={setName} />
           </label>
           {sources.length > 0 && (
             <label className="basic-checkbox">
@@ -163,10 +163,11 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
           {renameFile && hasActive && <p className="inline-alert">此视频有待完成的转换，请完成或取消后再重命名文件。</p>}
           {rename.isError && <p className="inline-alert" role="alert">{rename.error.message}</p>}
           <div className="basic-action-buttons">
-            <button type="button" className="btn-outline" disabled={busy} onClick={() => setForm(null)}>取消</button>
-            <button className="btn-primary" disabled={badName || busy || (renameFile && hasActive)}>
-              {rename.isPending ? "正在保存…" : "保存名称"}
-            </button>
+            <Button disabled={busy} onClick={() => setForm(null)}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={rename.isPending}
+              disabled={badName || busy || (renameFile && hasActive)}>
+              保存名称
+            </Button>
           </div>
         </form>
       )}
@@ -190,11 +191,11 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
           </>}
           {repair.isError && <p role="alert" className="inline-alert">提交失败：{repair.error.message}</p>}
           <div className="basic-action-buttons">
-            <button type="button" className="btn-outline" disabled={busy} onClick={() => setForm(null)}>取消</button>
-            <button type="button" className="btn-primary"
+            <Button disabled={busy} onClick={() => setForm(null)}>取消</Button>
+            <Button type="primary"
               disabled={busy || !tsInspection.data?.needs_repair} onClick={() => { setForm(null); setConfirmRepair(true); }}>
               继续修复
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -209,12 +210,13 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
             <p className="inline-alert">选择替换后，原片会在新文件校验并安装成功后永久移除，无法从项目中恢复。</p>
             {repair.isError && <p role="alert" className="inline-alert">提交失败：{repair.error.message}</p>}
             <div className="basic-action-buttons">
-              <button type="button" className="btn-outline" disabled={repair.isPending}
-                onClick={() => repair.mutate(false)}>生成新文件，不替换</button>
-              <button type="button" className="btn-primary" disabled={repair.isPending}
+              <Button disabled={repair.isPending}
+                onClick={() => repair.mutate(false)}>生成新文件，不替换</Button>
+              <Button type="primary" loading={repair.isPending}
+                disabled={repair.isPending}
                 onClick={() => repair.mutate(true)}>
-                {repair.isPending ? "正在提交…" : "替换来源并移除原片"}
-              </button>
+                替换来源并移除原片
+              </Button>
             </div>
           </div>
         </DirectoryDialog>
@@ -224,7 +226,7 @@ export default function BasicVideoActions({ video, toolbar, onReplaced }: {
       {notice && <p className="basic-notice" role="status">{notice}</p>}
       {conversions.isError && (
         <p className="inline-alert" role="alert">转换记录读取失败：{conversions.error.message}
-          <button className="btn-ghost" onClick={() => conversions.refetch()}>重试</button>
+          <Button size="small" onClick={() => conversions.refetch()}>重试</Button>
         </p>
       )}
       {!!conversions.data?.items.length && (

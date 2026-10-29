@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Modal } from "@arco-design/web-react";
 import { ApiError, deleteTag, listTags } from "../api/client";
 import type { TagSummary } from "../api/types";
 import Icon from "./Icon";
@@ -16,12 +17,9 @@ export default function TagManager({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<TagSummary | null>(null);
   const [notice, setNotice] = useState("");
-  const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
+  const searchInput = useRef<ComponentRef<typeof Input>>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
-  const descriptionId = useId();
   const qc = useQueryClient();
   const tags = useQuery({
     queryKey: ["tags", mediaType],
@@ -55,13 +53,6 @@ export default function TagManager({
   });
 
   useEffect(() => {
-    const el = dialog.current;
-    if (!el) return;
-    if (open && !el.open) el.showModal();
-    if (!open && el.open) el.close();
-  }, [open]);
-
-  useEffect(() => {
     if (!open) return;
     if (selected) cancelButton.current?.focus();
     else searchInput.current?.focus();
@@ -73,9 +64,9 @@ export default function TagManager({
 
   return (
     <>
-      <button
+      <Button
         ref={trigger}
-        className="btn-outline tag-manager-trigger"
+        className="tag-manager-trigger"
         onClick={() => {
           setSearch("");
           setSelected(null);
@@ -87,45 +78,28 @@ export default function TagManager({
       >
         <Icon name="list" size={16} />
         管理标签
-      </button>
-      <dialog
-        ref={dialog}
+      </Button>
+      <Modal
+        visible={open}
         className="tag-manager-dialog"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        onClose={() => {
-          if (dialog.current?.open) return;
-          setOpen(false);
-          trigger.current?.focus();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            if (!deletion.isPending) setOpen(false);
-          }
-        }}
-        onCancel={(event) => {
-          if (deletion.isPending) event.preventDefault();
-        }}
-      >
-        <header className="tag-manager-header">
+        escToExit={!deletion.isPending}
+        footer={null}
+        title={
           <div>
             <p className="eyebrow">
               <span /> ORGANIZE YOUR ARCHIVE
             </p>
-            <h2 id={titleId}>{selected ? "删除标签" : "管理标签"}</h2>
+            <h2>{selected ? "删除标签" : "管理标签"}</h2>
           </div>
-          <button
-            className="btn-ghost"
-            aria-label="关闭标签管理"
-            disabled={deletion.isPending}
-            onClick={() => setOpen(false)}
-          >
-            <Icon name="close" size={18} />
-          </button>
-        </header>
+        }
+        onCancel={() => {
+          if (deletion.isPending) return;
+          setOpen(false);
+          trigger.current?.focus();
+        }}
+      >
         <div className="tag-manager-body">
-          <p id={descriptionId} className="tag-manager-description">
+          <p className="tag-manager-description">
             {selected
               ? "删除当前库的标签及其关联，另一个媒体库的标签不受影响。"
               : "整理当前媒体库的标签，视频和照片的标签分别管理。"}
@@ -153,9 +127,8 @@ export default function TagManager({
                 原文件、其他标签和观看进度都会保留。
               </p>
               <div className="tag-manager-actions">
-                <button
+                <Button
                   ref={cancelButton}
-                  className="btn-outline"
                   disabled={deletion.isPending}
                   onClick={() => {
                     setSelected(null);
@@ -163,14 +136,14 @@ export default function TagManager({
                   }}
                 >
                   取消
-                </button>
-                <button
-                  className="btn-primary"
-                  disabled={deletion.isPending}
+                </Button>
+                <Button
+                  type="primary"
+                  loading={deletion.isPending}
                   onClick={() => deletion.mutate(selected)}
                 >
                   {deletion.isPending ? "正在删除…" : "确认删除标签"}
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -178,12 +151,11 @@ export default function TagManager({
               <label className="tag-manager-search">
                 <span className="sr-only">搜索标签</span>
                 <Icon name="search" size={17} />
-                <input
+                <Input
                   ref={searchInput}
-                  type="search"
                   placeholder="搜索标签名称…"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={setSearch}
                 />
               </label>
               {tags.isLoading && (
@@ -194,12 +166,9 @@ export default function TagManager({
               {tags.isError && (
                 <div role="alert" className="inline-alert">
                   无法读取标签：{tags.error.message}
-                  <button
-                    className="btn-outline"
-                    onClick={() => tags.refetch()}
-                  >
+                  <Button onClick={() => tags.refetch()}>
                     重新加载标签
-                  </button>
+                  </Button>
                 </div>
               )}
               {!tags.isLoading && !tags.isError && (
@@ -216,8 +185,8 @@ export default function TagManager({
                           <strong title={tag.name}>{tag.name}</strong>
                           <span>{tag.video_count} 个影像</span>
                         </div>
-                        <button
-                          className="btn-ghost tag-delete-button"
+                        <Button
+                          className="tag-delete-button"
                           aria-label={`删除标签「${tag.name}」`}
                           disabled={tags.isFetching}
                           onClick={() => {
@@ -227,7 +196,7 @@ export default function TagManager({
                           }}
                         >
                           删除
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -243,7 +212,7 @@ export default function TagManager({
             </>
           )}
         </div>
-      </dialog>
+      </Modal>
     </>
   );
 }

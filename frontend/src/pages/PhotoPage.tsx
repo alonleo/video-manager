@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@arco-design/web-react";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getVideo, listVideos, updateVideo } from "../api/client";
 import type { VideoListItem } from "../api/types";
@@ -127,7 +128,7 @@ function PhotoViewer({ id, version, title, previous, next, first, autoplay, inte
         if (dx > 0 && previous) onNavigate(previous);
         if (dx < 0 && next) onNavigate(next);
       }}>
-      {error ? <div className="photo-preview-status" role="alert"><Icon name="photo" size={36} /><p>无法预览照片，请检查源文件或磁盘是否可用。</p><button className="btn-outline" onClick={() => { setError(false); setNatural({ w: 0, h: 0 }); setAttempt(a => a + 1); }}>重新加载</button></div> : <>
+      {error ? <div className="photo-preview-status" role="alert"><Icon name="photo" size={36} /><p>无法预览照片，请检查源文件或磁盘是否可用。</p><Button onClick={() => { setError(false); setNatural({ w: 0, h: 0 }); setAttempt(a => a + 1); }}>重新加载</Button></div> : <>
         {!natural.w && <div className="photo-preview-status" role="status">正在读取照片…</div>}
         <button className="photo-step photo-step-previous" aria-label="查看上一张照片" disabled={!previous} onClick={() => previous && onNavigate(previous)}><Icon name="chevron" size={26} /></button>
         <div className="photo-canvas">
@@ -141,17 +142,17 @@ function PhotoViewer({ id, version, title, previous, next, first, autoplay, inte
       </>}
     </div>
     <div className="photo-controls" role="group" aria-label="照片查看工具">
-      <button className="btn-outline" aria-label="向左旋转照片" disabled={error || !natural.w} onClick={() => setRotation(value => value - 90)}><Icon name="rotateLeft" size={17} /></button>
-      <button className="btn-outline" aria-label="向右旋转照片" disabled={error || !natural.w} onClick={() => setRotation(value => value + 90)}><Icon name="rotateRight" size={17} /></button>
-      <button className="btn-outline" aria-label="缩小照片" disabled={error || !natural.w || zoom <= 0.25} onClick={() => changeZoom(zoom / 1.25)}>−</button>
+      <Button aria-label="向左旋转照片" disabled={error || !natural.w} onClick={() => setRotation(value => value - 90)}><Icon name="rotateLeft" size={17} /></Button>
+      <Button aria-label="向右旋转照片" disabled={error || !natural.w} onClick={() => setRotation(value => value + 90)}><Icon name="rotateRight" size={17} /></Button>
+      <Button aria-label="缩小照片" disabled={error || !natural.w || zoom <= 0.25} onClick={() => changeZoom(zoom / 1.25)}>−</Button>
       <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-      <button className="btn-outline" aria-label="放大照片" disabled={error || !natural.w || zoom >= 8} onClick={() => changeZoom(zoom * 1.25)}>+</button>
-      <button className="btn-outline" onClick={() => setZoom(1)}>适应窗口</button>
+      <Button aria-label="放大照片" disabled={error || !natural.w || zoom >= 8} onClick={() => changeZoom(zoom * 1.25)}>+</Button>
+      <Button onClick={() => setZoom(1)}>适应窗口</Button>
       {autoplay && <span className="photo-slideshow-status" aria-live="polite">自动轮播 · {intervalSeconds} 秒</span>}
-      <button className="btn-outline" onClick={async () => {
+      <Button onClick={async () => {
         try { setScreenError(""); if (document.fullscreenElement) await document.exitFullscreen(); else await viewer.current?.requestFullscreen(); }
         catch { setScreenError("当前环境无法进入全屏，请使用窗口预览。"); }
-      }}><Icon name={fullscreen ? "fullscreenExit" : "fullscreen"} size={16} />{fullscreen ? "退出全屏" : "全屏"}</button>
+      }}><Icon name={fullscreen ? "fullscreenExit" : "fullscreen"} size={16} />{fullscreen ? "退出全屏" : "全屏"}</Button>
     </div>
     {screenError && <p className="photo-screen-error" role="status">{screenError}</p>}
   </section>;
@@ -237,9 +238,9 @@ export default function PhotoPage() {
       <Link to={back} state={returnState} className="btn-ghost"><Icon name="back" size={17} />返回照片库</Link>
       <div><p className="eyebrow"><span />PHOTO COLLECTION · 照片收藏</p><h1>{photo.title}</h1>{sequencePosition && <p className="photo-sequence-count">第 {sequencePosition} 张 · 当前浏览序列</p>}</div>
       <div className="player-action-row">
-        <button className="btn-outline photo-manage-toggle" aria-pressed={manage} onClick={() => setManage(value => !value)}><Icon name={manage ? "photo" : "settings"} size={16} />{manage ? "返回浏览" : "管理照片"}</button>
+        <Button className="photo-manage-toggle" aria-pressed={manage} onClick={() => setManage(value => !value)}><Icon name={manage ? "photo" : "settings"} size={16} />{manage ? "返回浏览" : "管理照片"}</Button>
         {manage && <><div className="player-basic-action-slot" ref={setToolbar} /><MoveVideoButton key={id} video={photo} /><RemoveVideoButton video={photo} onRemoved={() => navigate(back, { replace: true, state: { ...returnState, removalNotice: `已移除「${photo.title}」的收录，原文件已保留；再次扫描可重新收录。` } })} /></>}
-        <button className="btn-outline" aria-pressed={photo.is_favorite} disabled={favorite.isPending} onClick={() => favorite.mutate(!photo.is_favorite)}><Icon name="star" size={16} />{photo.is_favorite ? "已收藏" : "收藏"}</button>
+        <Button aria-pressed={photo.is_favorite} disabled={favorite.isPending} onClick={() => favorite.mutate(!photo.is_favorite)}><Icon name="star" size={16} />{photo.is_favorite ? "已收藏" : "收藏"}</Button>
         <a className="btn-outline" href={`/api/photos/${id}/image?download=true`} download><Icon name="download" size={16} />下载原图</a>
       </div>
     </div>

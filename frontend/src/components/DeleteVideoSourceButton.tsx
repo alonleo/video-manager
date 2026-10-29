@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Select } from "@arco-design/web-react";
 import { deleteVideoSource, previewSourceDeletion, type SourceDeletionResult } from "../api/client";
 import type { VideoDetail } from "../api/types";
 import { formatSize } from "../lib/format";
@@ -51,10 +52,9 @@ function DeleteSourceDialog({ video, onClose, onDeleted }: {
     <p className="delete-source-title">{video.title}</p>
     <p className="delete-source-warning">永久删除所选视频文件，不经过系统回收站。请确认文件路径；所在目录和其他文件会保留。</p>
     <label>要删除的本地来源
-      <select className="input" value={sourceId} disabled={remove.isPending}
-        onChange={event => { setSourceId(Number(event.target.value)); setConfirmed(""); remove.reset(); }}>
-        {sources.map(source => <option key={source.id} value={source.id}>{source.local_path}</option>)}
-      </select>
+      <Select value={sourceId} style={{ width: "100%" }} disabled={remove.isPending}
+        onChange={(value) => { setSourceId(Number(value)); setConfirmed(""); remove.reset(); }}
+        options={sources.map(source => ({ value: source.id, label: source.local_path }))} />
     </label>
     {preview.isFetching && <p className="directory-help" role="status">正在检查文件与处理任务…</p>}
     {preview.isError && <p className="inline-alert" role="alert">{preview.error.message}</p>}
@@ -74,14 +74,14 @@ function DeleteSourceDialog({ video, onClose, onDeleted }: {
     </label>
     {remove.isError && <p className="inline-alert" role="alert">{remove.error.message}</p>}
     <div className="directory-dialog-actions">
-      <button type="button" className="btn-outline" autoFocus disabled={remove.isPending} onClick={onClose}>取消</button>
-      {(preview.isError || remove.isError) && <button type="button" className="btn-outline"
+      <Button autoFocus disabled={remove.isPending} onClick={onClose}>取消</Button>
+      {(preview.isError || remove.isError) && <Button
         disabled={preview.isFetching || remove.isPending}
-        onClick={() => { setConfirmed(""); remove.reset(); void preview.refetch(); }}>重新检查</button>}
-      <button type="button" className="btn-primary delete-source-submit" disabled={!ready}
+        onClick={() => { setConfirmed(""); remove.reset(); void preview.refetch(); }}>重新检查</Button>}
+      <Button type="primary" className="delete-source-submit" loading={remove.isPending} disabled={!ready}
         onClick={() => { if (ready) remove.mutate(); }}>
-        {remove.isPending ? "正在删除…" : "永久删除文件"}
-      </button>
+        永久删除文件
+      </Button>
     </div>
   </DirectoryDialog>;
 }
@@ -94,10 +94,10 @@ export default function DeleteVideoSourceButton({ video, onDeleted }: {
   const [notice, setNotice] = useState("");
   if (!video.sources.some(source => source.source_type === "local" && source.local_path)) return null;
   return <>
-    <button type="button" className="btn-outline delete-source-trigger" aria-haspopup="dialog"
+    <Button className="delete-source-trigger" aria-haspopup="dialog"
       onClick={() => { setNotice(""); setOpen(true); }}>
       <Icon name="trash" size={16} />删除源文件
-    </button>
+    </Button>
     {notice && <p className="delete-source-notice" role="status">{notice}</p>}
     {open && <DeleteSourceDialog video={video} onClose={() => setOpen(false)} onDeleted={result => {
       setOpen(false);
