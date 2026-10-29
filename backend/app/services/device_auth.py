@@ -46,8 +46,14 @@ PAIRING_SERVER_NETWORKS = tuple(
 
 
 def discover_pairing_origins(port: int) -> list[str]:
-    """Return reachable IPv4 LAN origins suitable for another device."""
+    """Return reachable IPv4 LAN origins suitable for another device.
+
+    默认路由出口（UDP connect 探测）排在最前作为推荐地址；其余地址仅按网段
+    归组排序。机器上常有多个虚拟网卡（WSL/VMware/Docker），按字符串排序会让
+    虚拟网卡地址排到推荐位，手机连不上。
+    """
     addresses: set[ipaddress.IPv4Address] = set()
+    primary: ipaddress.IPv4Address | None = None
 
     try:
         infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_DGRAM)
@@ -64,7 +70,10 @@ def discover_pairing_origins(port: int) -> list[str]:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
                 route.connect((probe, 9))
-                addresses.add(ipaddress.IPv4Address(route.getsockname()[0]))
+                found = ipaddress.IPv4Address(route.getsockname()[0])
+                addresses.add(found)
+                if primary is None:
+                    primary = found
         except (OSError, ipaddress.AddressValueError):
             continue
 
@@ -73,6 +82,9 @@ def discover_pairing_origins(port: int) -> list[str]:
         for address in addresses
         if any(address in network for network in PAIRING_SERVER_NETWORKS)
     )
+    if primary is not None and primary in usable:
+        usable.remove(primary)
+        usable.insert(0, primary)
     suffix = "" if port == 80 else f":{port}"
     return [f"http://{address}{suffix}" for address in usable]
 
