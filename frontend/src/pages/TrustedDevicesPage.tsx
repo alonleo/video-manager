@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Modal, Radio } from "@arco-design/web-react";
 import { QRCodeSVG } from "qrcode.react";
 
 import {
@@ -89,24 +90,16 @@ function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void 
       <fieldset className="pairing-mode">
         <legend>扫码设备</legend>
         <div className="pairing-mode-options">
-          <label className="pairing-mode-option">
-            <input type="radio" name="pairing-mode" checked={mode === "android"} onChange={event => {
-              if (!event.currentTarget.checked) return;
-              setMode("android");
-              setCopied(false);
-              setCopyError(false);
-            }} />
-            Android 应用（推荐）
-          </label>
-          <label className="pairing-mode-option">
-            <input type="radio" name="pairing-mode" checked={mode === "browser"} onChange={event => {
-              if (!event.currentTarget.checked) return;
-              setMode("browser");
-              setCopied(false);
-              setCopyError(false);
-            }} />
-            浏览器（仅 HTTPS）
-          </label>
+          <Radio value="android" checked={mode === "android"} onChange={() => {
+            setMode("android");
+            setCopied(false);
+            setCopyError(false);
+          }}>Android 应用（推荐）</Radio>
+          <Radio value="browser" checked={mode === "browser"} onChange={() => {
+            setMode("browser");
+            setCopied(false);
+            setCopyError(false);
+          }}>浏览器（仅 HTTPS）</Radio>
         </div>
       </fieldset>
       <p className="pairing-mode-help">
@@ -115,8 +108,8 @@ function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void 
           : "浏览器配对必须使用 HTTPS，以安全生成并保存设备密钥。"}
       </p>
       <label className="pairing-origin">新设备访问地址
-        <input className="input" type="url" value={siteOrigin} onChange={event => {
-          setSiteOrigin(event.target.value);
+        <Input type="url" value={siteOrigin} onChange={value => {
+          setSiteOrigin(value);
           setOriginEdited(true);
           setCopied(false);
           setCopyError(false);
@@ -129,20 +122,20 @@ function PairingPanel({ pairing, close }: { pairing: Pairing; close: () => void 
       {pairTarget.url && <div className="pairing-qr"><QRCodeSVG value={pairTarget.url} size={228} level="M" marginSize={2} /></div>}
       <p className="pairing-expiry">二维码两分钟内有效，且只能使用一次。</p>
       {mode === "browser" && !window.isSecureContext && <p className="inline-alert" role="alert">当前页面不是安全上下文。浏览器配对需要 HTTPS，请先为网站启用 HTTPS。</p>}
-      <button className="btn-outline pairing-copy" type="button" disabled={!pairTarget.url} onClick={async () => {
+      <Button className="pairing-copy" disabled={!pairTarget.url} onClick={async () => {
         try {
           await navigator.clipboard.writeText(pairTarget.url);
           setCopied(true); setCopyError(false);
         } catch { setCopyError(true); }
-      }}>{copied ? "链接已复制" : "复制配对链接"}</button>
+      }}>{copied ? "链接已复制" : "复制配对链接"}</Button>
       {copyError && <p className="inline-alert" role="alert">浏览器无法复制链接，请直接使用相机扫描二维码。</p>}
     </>}
     {pending && <div className="pairing-request">
       <p>设备 <strong>{data.requested_device?.name}</strong> 正在申请加入。确认两台设备显示相同数字后再允许。</p>
       <strong className="device-verification-code">{data.verification_code?.slice(0, 3)} {data.verification_code?.slice(3)}</strong>
       <div className="pairing-actions">
-        <button className="btn-outline" type="button" disabled={decide.isPending} onClick={() => decide.mutate("reject")}>拒绝</button>
-        <button className="btn-primary" type="button" disabled={decide.isPending} onClick={() => decide.mutate("approve")}>允许此设备</button>
+        <Button disabled={decide.isPending} onClick={() => decide.mutate("reject")}>拒绝</Button>
+        <Button type="primary" loading={decide.isPending} onClick={() => decide.mutate("approve")}>允许此设备</Button>
       </div>
     </div>}
     {data.status === "approved" && <div className="pairing-result"><Icon name="check" size={26} /><div><strong>设备已加入</strong><p>新设备现在可以安全访问本站。</p></div></div>}
@@ -187,7 +180,7 @@ export default function TrustedDevicesPage() {
   });
 
   if (access.isLoading) return <section className="card trusted-devices-intro"><p role="status">正在确认设备管理权限…</p></section>;
-  if (access.isError) return <section className="card trusted-devices-intro"><div><h2>暂时无法确认权限</h2><p>{access.error.message}</p></div><button className="btn-outline" type="button" onClick={() => access.refetch()}>重试</button></section>;
+  if (access.isError) return <section className="card trusted-devices-intro"><div><h2>暂时无法确认权限</h2><p>{access.error.message}</p></div><Button onClick={() => access.refetch()}>重试</Button></section>;
   if (!canManage) return <section className="card trusted-devices-intro">
     <div><h2>信任设备由初始设备管理</h2><p>当前设备可以访问影像内容，但不能查看、添加或移除其他信任设备。请回到最初在服务器本机完成设置的设备进行管理。</p></div>
   </section>;
@@ -195,26 +188,32 @@ export default function TrustedDevicesPage() {
   return <div className="trusted-devices">
     <section className="card trusted-devices-intro">
       <div><h2>只允许你确认过的设备</h2><p>每台设备拥有独立的浏览器私钥。扫码只会发起申请，必须在已有信任设备上核对验证码并批准。</p></div>
-      <button className="btn-primary" type="button" disabled={create.isPending} onClick={() => create.mutate()}>
-        <Icon name="plus" size={16} />{create.isPending ? "正在生成…" : "添加信任设备"}
-      </button>
+      <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>
+        <Icon name="plus" size={16} />添加信任设备
+      </Button>
     </section>
     {create.isError && <p className="inline-alert" role="alert">{create.error.message}</p>}
     {pairing && <PairingPanel pairing={pairing} close={() => { setDismissedPairingId(pairing.id); setPairing(null); }} />}
     <section className="card trusted-device-list">
       <div className="trusted-device-list-heading"><h2>已信任设备</h2><span>{devices.data?.items.filter(item => item.status === "active").length ?? 0} 台</span></div>
       {devices.isLoading && <p role="status">正在读取设备列表…</p>}
-      {devices.isError && <p className="inline-alert" role="alert">{devices.error.message}<button className="btn-ghost" onClick={() => devices.refetch()}>重试</button></p>}
+      {devices.isError && <p className="inline-alert" role="alert">{devices.error.message}<Button size="small" onClick={() => devices.refetch()}>重试</Button></p>}
       {devices.data?.items.map(device => <article className="trusted-device-row" key={device.id}>
         <div className="trusted-device-icon"><Icon name="storage" size={20} /></div>
         <div className="trusted-device-copy">
           <div><strong>{device.name}</strong>{device.is_current && <span>当前设备</span>}{device.is_bootstrap && <span>初始设备</span>}{device.status === "pending" && <span>等待批准</span>}</div>
           <p>加入于 {formatTime(device.approved_at ?? device.created_at)} · 最近使用 {formatTime(device.last_seen_at)}</p>
         </div>
-        {device.status === "active" && <button className="btn-ghost trusted-device-revoke" type="button" disabled={revoke.isPending}
+        {device.status === "active" && <Button size="small" className="trusted-device-revoke" disabled={revoke.isPending}
           onClick={() => {
-            if (window.confirm(`确定撤销“${device.name}”吗？该设备将立即失去访问权限。`)) revoke.mutate(device.id);
-          }}>撤销</button>}
+            Modal.confirm({
+              title: "撤销这台设备？",
+              content: `确定撤销“${device.name}”吗？该设备将立即失去访问权限。`,
+              okText: "撤销",
+              cancelText: "取消",
+              onOk: () => revoke.mutate(device.id),
+            });
+          }}>撤销</Button>}
       </article>)}
       {revoke.isError && <p className="inline-alert" role="alert">{revoke.error.message}</p>}
     </section>

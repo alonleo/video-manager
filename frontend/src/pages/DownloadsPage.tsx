@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Radio, Select, Tag } from "@arco-design/web-react";
 import { listCategories } from "../api/client";
 import { downloadStatus, listDownloads, startDownload } from "../api/downloads";
 import Icon from "../components/Icon";
@@ -9,6 +10,15 @@ import { formatRelative } from "../lib/format";
 import "../components/downloads.css";
 
 const states = { queued: "排队中", running: "下载中", done: "已入库", error: "需要重试", canceled: "已取消" };
+const stateColors = { queued: "gray", running: "blue", done: "green", error: "red", canceled: "orange" } as const;
+const QUALITY_OPTIONS = [
+  { label: "最佳可用", value: "best" }, { label: "4K · 2160p", value: "2160" },
+  { label: "2K · 1440p", value: "1440" }, { label: "全高清 · 1080p", value: "1080" },
+  { label: "高清 · 720p", value: "720" }, { label: "流畅 · 480p", value: "480" },
+];
+const CONTAINER_OPTIONS = [
+  { label: "自动 · 保留原始编码", value: "auto" }, { label: "MP4", value: "mp4" }, { label: "MKV", value: "mkv" },
+];
 
 export default function DownloadsPage() {
   const qc = useQueryClient();
@@ -51,34 +61,27 @@ export default function DownloadsPage() {
         <div className="download-platforms"><span>抖音</span><span>哔哩哔哩</span><span>YouTube</span><span>更多站点 ↗</span></div>
         <form onSubmit={e => { e.preventDefault(); setMessage(""); submit.mutate(); }}>
           <label className="download-field">视频链接
-            <textarea className="input download-url" required maxLength={8192} rows={4} value={url}
-              onChange={e => { setUrl(e.target.value); submit.reset(); setMessage(""); }}
+            <Input.TextArea className="download-url" required maxLength={8192} autoSize={{ minRows: 4 }} value={url}
+              onChange={value => { setUrl(value); submit.reset(); setMessage(""); }}
               placeholder="https://www.bilibili.com/video/…&#10;或粘贴含视频链接的分享文本" /></label>
           <div className="download-options">
             <label className="download-field">清晰度上限
-              <select className="input" value={quality} onChange={e => setQuality(e.target.value)}>
-                <option value="best">最佳可用</option><option value="2160">4K · 2160p</option>
-                <option value="1440">2K · 1440p</option><option value="1080">全高清 · 1080p</option>
-                <option value="720">高清 · 720p</option><option value="480">流畅 · 480p</option>
-              </select></label>
+              <Select value={quality} options={QUALITY_OPTIONS} style={{ width: "100%" }} onChange={setQuality} /></label>
             <label className="download-field">文件格式
-              <select className="input" value={container} onChange={e => setContainer(e.target.value)}>
-                <option value="auto">自动 · 保留原始编码</option><option value="mp4">MP4</option><option value="mkv">MKV</option>
-              </select></label>
+              <Select value={container} options={CONTAINER_OPTIONS} style={{ width: "100%" }} onChange={setContainer} /></label>
           </div>
           <label className="download-field">保存到分类
-            <select className="input" value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="">默认下载目录 · 自动加入影像库</option>
-              {categories.data?.items.filter(c => c.available).map(c =>
-                <option key={c.id} value={c.id}>{c.storage_name} / {c.path || "根目录"}</option>)}
-            </select></label>
-          {categories.isError && <p className="download-hint">分类暂时无法读取，仍可使用默认下载目录。<button type="button" onClick={() => categories.refetch()}>重新加载</button></p>}
+            <Select value={category} style={{ width: "100%" }} onChange={setCategory}
+              options={[{ label: "默认下载目录 · 自动加入影像库", value: "" },
+                ...(categories.data?.items.filter(c => c.available).map(c =>
+                  ({ label: c.storage_name + " / " + (c.path || "根目录"), value: String(c.id) })) ?? [])]} /></label>
+          {categories.isError && <p className="download-hint">分类暂时无法读取，仍可使用默认下载目录。<Button size="mini" onClick={() => categories.refetch()}>重新加载</Button></p>}
           <p className="download-hint">每次下载单个视频；合集链接仅取首条。实际画质取决于视频源和登录权限。</p>
           {submit.isError && <p className="download-error" role="alert">{submit.error.message}</p>}
           {message && <p className="download-success" role="status">{message}</p>}
           <div className="download-submit"><span>下载完成后，可直接播放</span>
-            <button className="btn-primary" disabled={!ready || !url.trim() || submit.isPending}>
-              <Icon name="download" size={18} />{submit.isPending ? "正在加入队列…" : "开始下载"}</button></div>
+            <Button type="primary" loading={submit.isPending} disabled={!ready || !url.trim()}>
+              <Icon name="download" size={18} />开始下载</Button></div>
         </form>
       </section>
       <aside className="download-note">
@@ -98,15 +101,15 @@ export default function DownloadsPage() {
     </div>
     <div className="collection-heading"><div><h2>下载记录</h2><span className="collection-count">{active} 项进行中</span></div>
       <Link to="/jobs" className="download-settings-link">任务中心 <Icon name="arrow" size={15} /></Link></div>
-    <div className="tag-filters" aria-label="下载状态筛选">
-      {[["all", "全部"], ["active", "进行中"], ["done", "已完成"], ["error", "失败"], ["canceled", "已取消"]].map(([v, label]) =>
-        <button key={v} aria-pressed={filter === v} className={filter === v ? "selected" : ""} onClick={() => setFilter(v)}>{label}</button>)}
-    </div>
+    <Radio.Group type="button" value={filter} onChange={setFilter} aria-label="下载状态筛选">
+      <Radio value="all">全部</Radio><Radio value="active">进行中</Radio><Radio value="done">已完成</Radio>
+      <Radio value="error">失败</Radio><Radio value="canceled">已取消</Radio>
+    </Radio.Group>
     {jobs.isLoading && <div className="loading-panel" role="status">正在读取下载记录…</div>}
-    {jobs.isError && <div className="inline-alert" role="alert">{jobs.error.message}<button className="btn-outline" onClick={() => jobs.refetch()}>重试</button></div>}
+    {jobs.isError && <div className="inline-alert" role="alert">{jobs.error.message}<Button size="small" onClick={() => jobs.refetch()}>重试</Button></div>}
     <div className="download-list">{visible.map(job => {
       return <article className="card download-job" key={job.id}>
-        <div className="download-job-top"><span className={"download-state download-state-" + job.state}>{states[job.state]}</span>
+        <div className="download-job-top"><Tag color={stateColors[job.state]}>{states[job.state]}</Tag>
           <span className="download-hint">#{job.id} · {formatRelative(job.created_at)}</span></div>
         <h3>{typeof job.result?.title === "string" ? job.result.title : "视频链接下载"}</h3>
         <p className="download-source">{String(job.payload?.url ?? "")}</p>
