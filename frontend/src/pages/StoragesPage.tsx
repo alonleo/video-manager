@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Modal, Select } from "@arco-design/web-react";
 
 import {
   browseStorage,
@@ -21,9 +22,15 @@ const TYPE_LABEL: Record<string, string> = {
   url: "在线链接",
 };
 
+const TYPE_OPTIONS = Object.entries(TYPE_LABEL).map(([k, label]) => ({
+  label: k !== "local" ? `${label} · 即将支持` : label,
+  value: k,
+  disabled: k !== "local",
+}));
+
 function AddStorageForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
-  const nameRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<{ blur: () => void; focus: () => void; dom: HTMLInputElement } | null>(null);
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
@@ -58,23 +65,20 @@ function AddStorageForm({ onDone }: { onDone: () => void }) {
     >
       <div className="storage-form-heading">
         <h2>连接新的存储源</h2>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={onDone}
+        <Button
+          size="mini"
+          icon={<Icon name="close" size={17} />}
           aria-label="关闭添加表单"
-        >
-          <Icon name="close" size={17} />
-        </button>
+          onClick={onDone}
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted">名称</span>
-          <input
-            className="input"
+          <Input
             ref={nameRef}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={setName}
             placeholder="我的视频盘"
             required
           />
@@ -82,28 +86,22 @@ function AddStorageForm({ onDone }: { onDone: () => void }) {
 
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted">类型</span>
-          <select
-            className="input"
+          <Select
+            style={{ width: "100%" }}
             value={type}
-            onChange={(e) => setType(e.target.value as typeof type)}
-          >
-            {Object.entries(TYPE_LABEL).map(([k, label]) => (
-              <option key={k} value={k} disabled={k !== "local"}>
-                {label}
-                {k !== "local" ? " · 即将支持" : ""}
-              </option>
-            ))}
-          </select>
+            options={TYPE_OPTIONS}
+            onChange={(value) => setType(value as typeof type)}
+          />
         </label>
       </div>
 
       {type === "local" && (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted">根目录（绝对路径）</span>
-          <input
-            className="input font-mono"
+          <Input
+            className="font-mono"
             value={root}
-            onChange={(e) => setRoot(e.target.value)}
+            onChange={setRoot}
             placeholder="/mnt/videos"
             required
           />
@@ -117,19 +115,19 @@ function AddStorageForm({ onDone }: { onDone: () => void }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">OpenList 地址</span>
-            <input
-              className="input font-mono"
+            <Input
+              className="font-mono"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={setBaseUrl}
               required
             />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">挂载路径</span>
-            <input
-              className="input font-mono"
+            <Input
+              className="font-mono"
               value={mount}
-              onChange={(e) => setMount(e.target.value)}
+              onChange={setMount}
               placeholder="/aliyun"
             />
           </label>
@@ -151,19 +149,15 @@ function AddStorageForm({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="flex gap-2">
-        <button
-          className="btn-primary"
-          disabled={
-            create.isPending ||
-            !name.trim() ||
-            (type === "local" && !root.trim())
-          }
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={create.isPending}
+          disabled={!name.trim() || (type === "local" && !root.trim())}
         >
-          {create.isPending ? "创建中…" : "创建"}
-        </button>
-        <button type="button" className="btn-ghost" onClick={onDone}>
-          取消
-        </button>
+          创建
+        </Button>
+        <Button onClick={onDone}>取消</Button>
       </div>
     </form>
   );
@@ -239,43 +233,46 @@ function StorageRow({ storage }: { storage: Storage }) {
         </span>
 
         <div className="flex gap-1.5">
-          <button
-            className="btn-outline"
+          <Button
+            loading={test.isPending}
             onClick={() => test.mutate()}
             disabled={test.isPending}
           >
-            {test.isPending ? "检测中…" : "检测"}
-          </button>
-          <button
-            className="btn-outline"
+            检测
+          </Button>
+          <Button
+            loading={scan.isPending}
             onClick={() => scan.mutate()}
             disabled={scan.isPending}
           >
-            {scan.isPending ? "提交中…" : "扫描"}
-          </button>
+            扫描
+          </Button>
           {storage.type === "local" && (
-            <button
-              className="btn-ghost"
-              onClick={() => setExpanded((v) => !v)}
-            >
+            <Button onClick={() => setExpanded((v) => !v)}>
               {expanded ? "收起" : "浏览"}
-            </button>
+            </Button>
           )}
-          <button
-            className="btn-ghost hover:text-red-400"
+          <Button
+            status="danger"
             disabled={del.isPending}
             onClick={() => {
-              if (
-                confirm(
-                  `确定删除存储源「${storage.name}」？\n\n只会删除配置，不会删除任何原文件。`,
-                )
-              ) {
-                del.mutate();
-              }
+              Modal.confirm({
+                title: "删除存储源",
+                content: (
+                  <span>
+                    确定删除存储源「{storage.name}」？
+                    <br />
+                    只会删除配置，不会删除任何原文件。
+                  </span>
+                ),
+                okText: "删除",
+                cancelText: "取消",
+                onOk: () => del.mutate(),
+              });
             }}
           >
             删除
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -353,20 +350,21 @@ function StorageRow({ storage }: { storage: Storage }) {
           </div>
 
           <div className="mt-3 flex items-center gap-2">
-            <input
-              className="input font-mono text-xs"
+            <Input
+              className="font-mono text-xs"
               placeholder="子路径（留空扫描全部）"
               aria-label="要扫描的子目录路径"
               value={scanPath}
-              onChange={(e) => setScanPath(e.target.value)}
+              onChange={setScanPath}
             />
-            <button
-              className="btn-primary shrink-0"
-              disabled={scan.isPending}
+            <Button
+              type="primary"
+              className="shrink-0"
+              loading={scan.isPending}
               onClick={() => scan.mutate()}
             >
               扫描此路径
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -397,13 +395,14 @@ export default function StoragesPage() {
           </p>
         </div>
         {!adding && (
-          <button
-            className="btn-primary ml-auto"
+          <Button
+            type="primary"
+            className="ml-auto"
+            icon={<Icon name="plus" size={16} />}
             onClick={() => setAdding(true)}
           >
-            <Icon name="plus" size={16} />
             添加存储源
-          </button>
+          </Button>
         )}
       </div>
 
@@ -461,9 +460,9 @@ export default function StoragesPage() {
           <Icon name="storage" size={32} />
           <h3>你的第一处影像空间</h3>
           <p>从一个本地目录开始。完成连接后，点击扫描即可建立影像索引。</p>
-          <button className="btn-primary" onClick={() => setAdding(true)}>
+          <Button type="primary" onClick={() => setAdding(true)}>
             添加第一个存储源
-          </button>
+          </Button>
         </div>
       )}
     </div>

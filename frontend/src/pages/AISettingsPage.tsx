@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Checkbox, Input, Modal, Radio, Select } from "@arco-design/web-react";
 import {
   subtitleApi,
   type ModelCatalog,
@@ -36,35 +37,30 @@ function ProviderFields({
       <legend>{title}</legend>
       <label>
         API 地址（Base URL）
-        <input
-          className="input"
+        <Input
           type="url"
           required
           value={value.base_url}
-          onChange={(e) => onChange({ ...value, base_url: e.target.value })}
+          onChange={(v) => onChange({ ...value, base_url: v })}
           placeholder="https://api.example.com/v1"
         />
       </label>
       <label>
         模型名称
-        <input
-          className="input"
+        <Input
           required
           value={value.model}
-          onChange={(e) => onChange({ ...value, model: e.target.value })}
+          onChange={(v) => onChange({ ...value, model: v })}
           placeholder="填写服务商提供的模型 ID"
         />
       </label>
       <label>
         API Key
-        <input
-          className="input"
+        <Input
           type="password"
           autoComplete="new-password"
           value={value.api_key ?? ""}
-          onChange={(e) =>
-            onChange({ ...value, api_key: e.target.value || null })
-          }
+          onChange={(v) => onChange({ ...value, api_key: v || null })}
           placeholder={
             value.has_api_key
               ? "已保存密钥；留空保持不变"
@@ -73,16 +69,15 @@ function ProviderFields({
         />
       </label>
       {value.has_api_key && (
-        <label className="ai-checkbox">
-          <input
-            type="checkbox"
-            checked={value.api_key === ""}
-            onChange={(e) =>
-              onChange({ ...value, api_key: e.target.checked ? "" : null })
-            }
-          />
+        <Checkbox
+          className="ai-checkbox"
+          checked={value.api_key === ""}
+          onChange={(checked) =>
+            onChange({ ...value, api_key: checked ? "" : null })
+          }
+        >
           清除已保存的密钥
-        </label>
+        </Checkbox>
       )}
     </fieldset>
   );
@@ -170,9 +165,13 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
     onError: (e) => setError(e.message),
   });
   const uninstallModel = (engine: string, model: string, name: string) => {
-    if (window.confirm(`卸载 ${name}？将删除模型文件，已有字幕与配音会保留。`)) {
-      uninstall.mutate({ engine, model });
-    }
+    Modal.confirm({
+      title: `卸载 ${name}？`,
+      content: "将删除模型文件，已有字幕与配音会保留。",
+      okText: "卸载",
+      cancelText: "取消",
+      onOk: () => uninstall.mutate({ engine, model }),
+    });
   };
   if (query.isError)
     return (
@@ -180,9 +179,7 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
         <div className="inline-alert" role="alert">
           {query.error.message}
         </div>
-        <button className="btn-outline" onClick={() => query.refetch()}>
-          重新加载
-        </button>
+        <Button onClick={() => query.refetch()}>重新加载</Button>
       </div>
     );
   if (!form) return <div className="page loading-panel">正在读取 AI 设置…</div>;
@@ -224,27 +221,27 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
             </div>
             <label>
               处理方式
-              <select
-                className="input"
+              <Select
                 value={form.asr_provider}
-                onChange={(e) =>
-                  change({ asr_provider: e.target.value as "local" | "api" })
+                style={{ width: "100%" }}
+                onChange={(value) =>
+                  change({ asr_provider: value as "local" | "api" })
                 }
-              >
-                <option value="local">本地 Whisper</option>
-                <option value="api">第三方语音 API</option>
-              </select>
+                options={[
+                  { label: "本地 Whisper", value: "local" },
+                  { label: "第三方语音 API", value: "api" },
+                ]}
+              />
             </label>
             {form.asr_provider === "local" ? (
               <>
                 <label>
                   默认语音模型
-                  <select
-                    className="input"
+                  <Select
                     value={form.asr_model}
-                    onChange={(e) => change({ asr_model: e.target.value })}
-                  >
-                    {(
+                    style={{ width: "100%" }}
+                    onChange={(value) => change({ asr_model: value })}
+                    options={(
                       models.data?.whisper ?? [
                         {
                           id: form.asr_model,
@@ -252,13 +249,11 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
                           installed: false,
                         },
                       ]
-                    ).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                        {m.installed ? " · 已下载" : " · 需下载"}
-                      </option>
-                    ))}
-                  </select>
+                    ).map((m) => ({
+                      label: `${m.name}${m.installed ? " · 已下载" : " · 需下载"}`,
+                      value: m.id,
+                    }))}
+                  />
                 </label>
                 <p className="ai-hint">
                   使用 CPU / INT8 运行，字幕任务串行处理。首次使用请先下载模型。
@@ -275,14 +270,12 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
                   需要兼容 /audio/transcriptions 并返回分段时间戳（verbose_json
                   / segments），例如 whisper-1。普通聊天模型不能用于语音识别。
                 </p>
-                <button
-                  type="button"
-                  className="btn-outline"
+                <Button
                   disabled={dirty || test.isPending}
                   onClick={() => test.mutate("asr_api")}
                 >
                   检测语音 API
-                </button>
+                </Button>
               </>
             )}
           </section>
@@ -296,33 +289,32 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
             </div>
             <label>
               处理方式
-              <select
-                className="input"
+              <Select
                 value={form.translation_provider}
-                onChange={(e) =>
+                style={{ width: "100%" }}
+                onChange={(value) =>
                   change({
-                    translation_provider: e.target
-                      .value as SubtitleSettings["translation_provider"],
+                    translation_provider: value as SubtitleSettings["translation_provider"],
                   })
                 }
-              >
-                <option value="local">本地轻量翻译模型</option>
-                <option value="ollama">本地 Ollama</option>
-                <option value="api">第三方翻译 / 聊天 API</option>
-              </select>
+                options={[
+                  { label: "本地轻量翻译模型", value: "local" },
+                  { label: "本地 Ollama", value: "ollama" },
+                  { label: "第三方翻译 / 聊天 API", value: "api" },
+                ]}
+              />
             </label>
             {form.translation_provider === "local" ? (
               <>
                 <label>
                   默认翻译模型
-                  <select
-                    className="input"
+                  <Select
                     value={form.local_translation_model}
-                    onChange={(e) =>
-                      change({ local_translation_model: e.target.value })
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
+                      change({ local_translation_model: value })
                     }
-                  >
-                    {(
+                    options={(
                       models.data?.translation ?? [
                         {
                           id: "nllb-600m-int8",
@@ -330,13 +322,11 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
                           installed: false,
                         },
                       ]
-                    ).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                        {m.installed ? " · 已下载" : " · 需下载"}
-                      </option>
-                    ))}
-                  </select>
+                    ).map((m) => ({
+                      label: `${m.name}${m.installed ? " · 已下载" : " · 需下载"}`,
+                      value: m.id,
+                    }))}
+                  />
                 </label>
                 <p className="ai-hint">
                   约 630 MB，下载一次即可离线翻译。无需 Ollama 或 API
@@ -347,22 +337,20 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
               <>
                 <label>
                   Ollama 地址
-                  <input
-                    className="input"
+                  <Input
                     type="url"
                     required
                     value={form.ollama_url}
-                    onChange={(e) => change({ ollama_url: e.target.value })}
+                    onChange={(value) => change({ ollama_url: value })}
                   />
                 </label>
                 <label>
                   默认翻译模型
-                  <input
-                    className="input"
+                  <Input
                     required
                     list="ollama-installed"
                     value={form.ollama_model}
-                    onChange={(e) => change({ ollama_model: e.target.value })}
+                    onChange={(value) => change({ ollama_model: value })}
                   />
                   <datalist id="ollama-installed">
                     {models.data?.ollama.map((m) => (
@@ -373,14 +361,12 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
                 <p className="ai-hint">
                   需先安装并启动本机 Ollama，再从下方下载模型。
                 </p>
-                <button
-                  type="button"
-                  className="btn-outline"
+                <Button
                   disabled={dirty || test.isPending}
                   onClick={() => test.mutate("ollama")}
                 >
                   检测 Ollama
-                </button>
+                </Button>
               </>
             ) : (
               <>
@@ -393,26 +379,23 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
                   支持 OpenAI、DeepSeek，以及提供 /chat/completions
                   接口的服务。填写服务商实际模型 ID。
                 </p>
-                <button
-                  type="button"
-                  className="btn-outline"
+                <Button
                   disabled={dirty || test.isPending}
                   onClick={() => test.mutate("translation_api")}
                 >
                   检测翻译 API
-                </button>
+                </Button>
               </>
             )}
           </section>
         </div>
         <label className="ai-proxy-field">
           模型下载代理（可选）
-          <input
-            className="input"
+          <Input
             type="url"
             value={form.model_download_proxy || ""}
             placeholder="例如 http://127.0.0.1:7897；留空使用系统网络"
-            onChange={(e) => change({ model_download_proxy: e.target.value })}
+            onChange={(value) => change({ model_download_proxy: value })}
           />
           <span className="ai-hint">
             用于 Whisper、轻量翻译和 Qwen3-TTS 语音配音模型下载。Ollama 的下载网络由 Ollama
@@ -425,9 +408,9 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
               ? "有未保存的修改。检测连接前请先保存。"
               : "设置会用于后续发起的字幕任务。"}
           </span>
-          <button className="btn-primary" disabled={save.isPending}>
-            {save.isPending ? "正在保存…" : "保存 AI 设置"}
-          </button>
+          <Button type="primary" htmlType="submit" loading={save.isPending}>
+            保存 AI 设置
+          </Button>
         </div>
       </form>
       {error && (
@@ -446,16 +429,21 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
           <Link className="btn-ghost" to="/jobs">任务中心 →</Link>
         </div>
         <div className="ai-model-filters" role="group" aria-label="本地模型分类">
-          {([
-            ["all", "全部"], ["recognition", "语音识别"],
-            ["translation", "文本翻译"], ["speech", "语音配音"],
-          ] as const).map(([key, label]) => <button key={key} type="button"
-            aria-pressed={modelCategory === key} onClick={() => setModelCategory(key)}>{label}</button>)}
+          <Radio.Group
+            type="button"
+            value={modelCategory}
+            onChange={(value) => setModelCategory(value)}
+          >
+            <Radio value="all">全部</Radio>
+            <Radio value="recognition">语音识别</Radio>
+            <Radio value="translation">文本翻译</Radio>
+            <Radio value="speech">语音配音</Radio>
+          </Radio.Group>
         </div>
         <p className="ai-hint">语音识别把音频转成原文，文本翻译转换文字语言，语音配音把文字合成为声音。</p>
         {dirty && <p className="inline-alert" role="status">AI 设置有未保存修改，请先保存，再下载模型，以使用最新的下载代理。</p>}
         {models.isLoading && <p role="status" className="ai-hint">正在读取本地模型库…</p>}
-        {models.isError && <p className="inline-alert" role="alert">识别与翻译模型列表加载失败：{models.error.message}<button type="button" className="btn-ghost" onClick={() => models.refetch()}>重新加载</button></p>}
+        {models.isError && <p className="inline-alert" role="alert">识别与翻译模型列表加载失败：{models.error.message}<Button size="small" onClick={() => models.refetch()}>重新加载</Button></p>}
 
         <section className="ai-model-category" aria-labelledby="recognition-model-title" hidden={!showModels("recognition")}>
           <div className="ai-model-category-heading"><div><h3 id="recognition-model-title">语音识别</h3><p>Whisper · 生成视频字幕、提取参考音频原文。</p></div><span className="tiny-label">AUDIO → TEXT</span></div>
@@ -464,8 +452,8 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
             {models.data?.whisper.map(m => <article className="card ai-model-card" key={m.id} aria-label={m.name}>
               <div className="ai-model-top"><span className="tiny-label">语音识别</span><span className={m.installed ? "text-emerald-700 text-xs" : "text-muted text-xs"}>{m.installed ? "已就绪 · " : ""}{formatModelSize(m)}</span></div>
               <h4>{m.name}</h4><p>{m.description}</p>
-              <button type="button" className="btn-outline" disabled={m.installed || download.isPending || uninstall.isPending || dirty || !models.data.asr_runtime} onClick={() => download.mutate({ engine: "whisper", model: m.id })}>{m.installed ? "已下载" : "下载模型"}</button>
-              {m.installed && <button type="button" className="btn-ghost text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("whisper", m.id, m.name)}>卸载模型</button>}
+              <Button disabled={m.installed || download.isPending || uninstall.isPending || dirty || !models.data.asr_runtime} onClick={() => download.mutate({ engine: "whisper", model: m.id })}>{m.installed ? "已下载" : "下载模型"}</Button>
+              {m.installed && <Button className="text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("whisper", m.id, m.name)}>卸载模型</Button>}
             </article>)}
           </div>
         </section>
@@ -477,8 +465,8 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
             {models.data?.translation?.map(m => <article className="card ai-model-card" key={m.id} aria-label={m.name}>
               <div className="ai-model-top"><span className="tiny-label">轻量离线翻译</span><span className={m.installed ? "text-emerald-700 text-xs" : "text-muted text-xs"}>{m.installed ? "已就绪 · " : ""}{formatModelSize(m)}</span></div>
               <h4>{m.name}</h4><p>{m.description}</p>
-              <button type="button" className="btn-outline" disabled={m.installed || download.isPending || uninstall.isPending || dirty || !models.data.translation_runtime} onClick={() => download.mutate({ engine: "translation", model: m.id })}>{m.installed ? "已下载" : "下载轻量翻译模型"}</button>
-              {m.installed && <button type="button" className="btn-ghost text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("translation", m.id, m.name)}>卸载模型</button>}
+              <Button disabled={m.installed || download.isPending || uninstall.isPending || dirty || !models.data.translation_runtime} onClick={() => download.mutate({ engine: "translation", model: m.id })}>{m.installed ? "已下载" : "下载轻量翻译模型"}</Button>
+              {m.installed && <Button className="text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("translation", m.id, m.name)}>卸载模型</Button>}
             </article>)}
           </div>
           <h4>本地大模型翻译 · Ollama</h4>
@@ -487,7 +475,7 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
             <p>{models.data.ollama_error}，因此暂时无法下载这些模型。</p>
             <p>请在运行后端的电脑上安装并启动 Ollama；已安装时可运行 <code>ollama serve</code>。若使用其他端口，请在上方选择「本地 Ollama」并保存正确地址。</p>
             <a className="text-link" href="https://ollama.com/download" target="_blank" rel="noreferrer">安装 Ollama →</a>
-            <button type="button" className="btn-ghost" disabled={models.isFetching} onClick={() => models.refetch()}>{models.isFetching ? "正在检查…" : "重新检查连接"}</button>
+            <Button loading={models.isFetching} onClick={() => models.refetch()}>重新检查连接</Button>
           </div>}
           <div className="ai-model-grid">
             {models.data?.ollama.map(m => <article className="card ai-model-card" key={m.id} aria-label={m.name || m.id}>
@@ -497,17 +485,17 @@ export default function AISettingsPage({ embedded = false }: { embedded?: boolea
               {m.size_mb != null && <p className="ai-hint">约 {(m.size_mb / 1000).toLocaleString("zh-CN")} GB · {m.hardware_hint}</p>}
               {m.source_url && <a className="text-link" href={m.source_url} target="_blank" rel="noreferrer">官方模型与使用说明 →</a>}
               <div className="ai-model-actions">
-                {m.installed && <button type="button" className="btn-ghost text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("ollama", m.id, m.name || m.id)}>卸载模型</button>}
-                <button type="button" className="btn-outline" disabled={m.installed || download.isPending || uninstall.isPending || dirty || !!models.data.ollama_error} onClick={() => download.mutate({ engine: "ollama", model: m.id })}>{m.installed ? "已下载" : models.data.ollama_error ? "需启动 Ollama" : dirty ? "请先保存设置" : download.isPending ? "正在提交…" : "下载模型"}</button>
-                {m.installed && <button type="button" className="btn-ghost" disabled={form.translation_provider === "ollama" && form.ollama_model === m.id} onClick={() => change({ translation_provider: "ollama", ollama_model: m.id })}>{form.translation_provider === "ollama" && form.ollama_model === m.id ? "当前默认模型" : "设为默认翻译模型"}</button>}
+                {m.installed && <Button className="text-red-700" disabled={uninstall.isPending || download.isPending} onClick={() => uninstallModel("ollama", m.id, m.name || m.id)}>卸载模型</Button>}
+                <Button loading={download.isPending} disabled={m.installed || download.isPending || uninstall.isPending || dirty || !!models.data.ollama_error} onClick={() => download.mutate({ engine: "ollama", model: m.id })}>{m.installed ? "已下载" : models.data.ollama_error ? "需启动 Ollama" : dirty ? "请先保存设置" : "下载模型"}</Button>
+                {m.installed && <Button disabled={form.translation_provider === "ollama" && form.ollama_model === m.id} onClick={() => change({ translation_provider: "ollama", ollama_model: m.id })}>{form.translation_provider === "ollama" && form.ollama_model === m.id ? "当前默认模型" : "设为默认翻译模型"}</Button>}
               </div>
             </article>)}
           </div>
           <section className="card ai-ollama-download">
             <div><h4>翻译模型 · Ollama</h4><p className="ai-hint">{models.data?.ollama_error || "已连接本机 Ollama。可下载推荐模型或填写模型名称。"}</p></div>
-            <label>下载 Ollama 模型<input className="input" list="ollama-download-models" value={pullModel} onChange={e => setPullModel(e.target.value)} /></label>
+            <label>下载 Ollama 模型<Input list="ollama-download-models" value={pullModel} onChange={value => setPullModel(value)} /></label>
             <datalist id="ollama-download-models">{models.data?.ollama.map(m => <option key={m.id} value={m.id}>{m.installed ? "已下载" : "可下载"}</option>)}</datalist>
-            <button type="button" className="btn-outline" disabled={!pullModel.trim() || download.isPending || uninstall.isPending || dirty || !models.data || !!models.data.ollama_error} onClick={() => download.mutate({ engine: "ollama", model: pullModel.trim() })}>下载翻译模型</button>
+            <Button disabled={!pullModel.trim() || download.isPending || uninstall.isPending || dirty || !models.data || !!models.data.ollama_error} onClick={() => download.mutate({ engine: "ollama", model: pullModel.trim() })}>下载翻译模型</Button>
           </section>
         </section>
 
