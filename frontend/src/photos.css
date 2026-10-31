@@ -20,8 +20,10 @@
 .photo-step-previous { left:16px; transform:rotate(180deg); }
 .photo-step-next { right:16px; }
 .photo-controls { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px; padding:14px; border-top:1px solid #ffffff18; }
-.photo-controls .btn-outline { color:#f3efe5; background:#ffffff09; border-color:#ffffff35; min-height:36px; }
-.photo-controls .btn-outline:hover { background:#ffffff18; }
+.photo-controls .btn-outline, .photo-controls .arco-btn.arco-btn-secondary { color:#f3efe5; background:#ffffff09; border-color:#ffffff35; min-height:36px; height:36px; }
+.photo-controls .btn-outline:hover, .photo-controls .arco-btn.arco-btn-secondary:hover:not([disabled]) { background:#ffffff18; border-color:#ffffff35; color:#f3efe5; }
+.photo-controls .arco-btn.arco-btn-secondary:active:not([disabled]) { background:#ffffff22; }
+.photo-controls .arco-btn-size-default.arco-btn-icon-only { width:36px; padding:0; }
 .photo-controls span { min-width:48px; text-align:center; font-variant-numeric:tabular-nums; font-size:12px; }
 .photo-controls .photo-slideshow-status { min-width:auto; padding:0 6px; color:#d9d2c4; }
 .photo-preview-status { min-height:320px; height:100%; display:flex; flex-direction:column; gap:16px; align-items:center; justify-content:center; text-align:center; padding:24px; }
@@ -44,11 +46,11 @@
   .photo-page.is-viewing .photo-viewport { height:64vh; min-height:360px; }
   .photo-page.is-viewing .player-heading { gap:12px; }
   .photo-page.is-viewing .player-action-row { width:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .photo-page.is-viewing .player-action-row .btn-outline { justify-content:center; min-width:0; padding-inline:8px; }
+  .photo-page.is-viewing .player-action-row .btn-outline, .photo-page.is-viewing .player-action-row .arco-btn { justify-content:center; min-width:0; padding-inline:8px; }
   .photo-step { width:38px; height:54px; margin-top:-27px; opacity:.78; }
   .photo-step-previous { left:8px; }
   .photo-step-next { right:8px; }
-  .photo-controls .btn-outline { padding-inline:10px; }
+  .photo-controls .btn-outline, .photo-controls .arco-btn.arco-btn-secondary { padding-inline:10px; }
 }
 
 .photo-details .video-tag-picker { padding:22px; }

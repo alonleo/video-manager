@@ -35,20 +35,7 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ConfigProvider
-      locale={zhCN}
-      theme={{
-        // 帧藏色板：纸色底、墨绿字、砖红强调；去掉 Arco 默认蓝
-        token: {
-          colorPrimary: "#b94327",
-          colorTextBase: "#24372f",
-          colorBgBase: "#f6f5f0",
-          borderRadius: 6,
-          fontFamily:
-            "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-        },
-      }}
-    >
+    <ConfigProvider locale={zhCN}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <DeviceAccessGate><Routes>

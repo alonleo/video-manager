@@ -1538,7 +1538,8 @@ button {
   max-width: 100%;
 }
 .player-basic-action-slot { display: contents; }
-.player-action-row .btn-outline {
+.player-action-row .btn-outline,
+.player-action-row .arco-btn {
   font-size: 11px;
 }
 .player-title-actions {
@@ -2431,7 +2432,7 @@ button {
 }
 
 @media (max-width: 700px) {
-  .player-action-row .btn-outline { padding-inline: 10px; }
+  .player-action-row .btn-outline, .player-action-row .arco-btn { padding-inline: 10px; }
 }
 
 /* Match the existing move dialog while preserving inline checkbox layouts. */
@@ -2476,4 +2477,112 @@ button {
     right: calc(16px + env(safe-area-inset-right, 0px));
     bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   }
+}
+
+/* —— Arco 控件与帧藏视觉对齐 ——
+   原 .btn-* 观感：43px 高、8px 圆角、半透明纸色底、砖红主按钮。
+   放在 @layer components 里，Tailwind utilities（如收藏按钮的 text-amber-400）仍可覆盖。 */
+@layer components {
+  .arco-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+  .arco-btn > .arco-btn-icon,
+  .arco-btn > svg {
+    flex: none;
+  }
+  .arco-btn-size-default {
+    height: 43px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  .arco-btn-size-default.arco-btn-icon-only {
+    width: 43px;
+    padding: 0;
+  }
+  .arco-btn-size-small {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    border-radius: 7px;
+  }
+  .arco-btn-size-mini {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  /* 默认按钮 = 原 .btn-outline：半透明纸色底 + 细线描边 */
+  .arco-btn.arco-btn-secondary {
+    background: #ffffff55;
+    border-color: #dddfd5;
+    color: #24372f;
+  }
+  .arco-btn.arco-btn-secondary:hover:not([disabled]) {
+    background: #edf0e5;
+    border-color: #cdd0c3;
+    color: #24372f;
+  }
+  .arco-btn.arco-btn-secondary:active:not([disabled]) {
+    background: #e2e6d7;
+  }
+  /* 主按钮 = 原 .btn-primary：砖红 + 轻投影 */
+  .arco-btn.arco-btn-primary {
+    box-shadow: 0 3px 8px #86301712;
+  }
+  .arco-btn.arco-btn-primary:hover:not([disabled]) {
+    background: #9e3821;
+  }
+  .arco-btn.arco-btn-primary:active:not([disabled]) {
+    background: #8e3320;
+  }
+}
+
+/* —— Arco 全局换肤：覆盖 arco.css 的色板变量 ——
+   arco.css 在 body 上定义 RGB 三元组变量（--arcoblue-*、--gray-* 等），
+   语义变量（--primary-*、--color-text-*、--color-neutral-*）全部由它们派生。
+   这里在 body 上按同名变量覆盖（本文件在 arco.css 之后加载，后者胜出），
+   一次让按钮/下拉/输入框/弹层/消息提示全部继承帧藏色板。 */
+body {
+  /* 主色：帧藏砖红 #b94327（6 号位） */
+  --arcoblue-1: 249, 237, 232;
+  --arcoblue-2: 243, 216, 206;
+  --arcoblue-3: 235, 189, 174;
+  --arcoblue-4: 223, 155, 135;
+  --arcoblue-5: 207, 116, 92;
+  --arcoblue-6: 185, 67, 39;
+  --arcoblue-7: 158, 55, 31;
+  --arcoblue-8: 131, 45, 24;
+  --arcoblue-9: 104, 36, 18;
+  --arcoblue-10: 78, 27, 13;
+
+  /* 中性色：纸色过渡到墨绿（10 号位 = 正文墨绿 #24372f，3 号位 = 描边 --line） */
+  --gray-1: 246, 245, 240;
+  --gray-2: 237, 238, 231;
+  --gray-3: 221, 223, 213;
+  --gray-4: 178, 186, 172;
+  --gray-5: 141, 150, 139;
+  --gray-6: 108, 118, 108;
+  --gray-7: 84, 95, 86;
+  --gray-8: 62, 74, 66;
+  --gray-9: 47, 63, 55;
+  --gray-10: 36, 55, 47;
+
+  /* 成功：帧藏绿 */
+  --green-6: 82, 118, 75;
+  --green-5: 119, 152, 111;
+  --green-7: 68, 98, 62;
+
+  /* 警示 / 危险：暖琥珀与砖红近亲 */
+  --orange-6: 169, 123, 46;
+  --red-6: 181, 72, 48;
+  --red-5: 206, 123, 98;
+  --red-7: 147, 57, 37;
+
+  /* 圆角：比 Arco 默认圆润一档，贴近原 .btn-* 的 8px */
+  --border-radius-small: 5px;
+  --border-radius-medium: 8px;
+  --border-radius-large: 12px;
 }
